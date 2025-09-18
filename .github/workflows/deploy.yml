@@ -1,0 +1,4 @@
+on:
+  push:
+    branches: [ main, codex/add-economic-indicators-and-charts-to-homepage ]
+  workflow_dispatch: {}   # 필요하면 수동 실행도 허용
