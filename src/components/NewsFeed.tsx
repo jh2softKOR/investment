@@ -30,6 +30,8 @@ type FmpNewsItem = {
   id?: string | number
 }
 
+const stripHtml = (value: string) => value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+
 const parseAlphaVantagePublishedAt = (value?: string): Date | null => {
   if (!value) {
     return null
@@ -57,6 +59,15 @@ const parseFmpPublishedAt = (value?: string): Date | null => {
   const hasTimezone = /[zZ]|[+-][0-9]{2}:?[0-9]{2}$/.test(normalized)
   const isoString = hasTimezone ? normalized : `${normalized}Z`
   const parsed = new Date(isoString)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+const parseRssPublishedAt = (value?: string): Date | null => {
+  if (!value) {
+    return null
+  }
+
+  const parsed = new Date(value)
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
@@ -112,6 +123,14 @@ const NewsFeed = () => {
         if (!normalized.length) {
           try {
             normalized = await fetchAlphaVantageNews(alphaVantageKey)
+          } catch (error) {
+            errors.push(error)
+          }
+        }
+
+        if (!normalized.length) {
+          try {
+            normalized = await fetchGoogleNewsRss()
           } catch (error) {
             errors.push(error)
           }
@@ -223,7 +242,7 @@ const fetchFmpNews = async (apiKey: string): Promise<NewsItem[]> => {
       const id = item.news_id ?? item.id ?? `${item.title}-${item.publishedDate ?? item.url}`
       const source = item.site || (item.symbols && item.symbols.length > 0 ? item.symbols.join(', ') : '출처 미확인')
 
-      const summary = item.text ? item.text.replace(/<[^>]*>/g, '').trim() : ''
+      const summary = item.text ? stripHtml(item.text) : ''
 
       return {
         id: typeof id === 'string' ? id : `${id}`,
@@ -267,9 +286,68 @@ const fetchAlphaVantageNews = async (apiKey: string): Promise<NewsItem[]> => {
       return {
         id: item.uuid ?? `${item.title}-${item.url}`,
         title: item.title,
-        summary: item.summary ?? '',
+        summary: item.summary ? stripHtml(item.summary) : '',
         url: item.url,
         source: item.source ?? '출처 미확인',
+        publishedAt,
+      }
+    })
+    .filter((item): item is NewsItem => Boolean(item))
+    .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
+}
+
+const fetchGoogleNewsRss = async (): Promise<NewsItem[]> => {
+  const rssUrl =
+    'https://r.jina.ai/https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=ko&gl=KR&ceid=KR:ko'
+  const response = await fetch(rssUrl)
+  if (!response.ok) {
+    throw new Error('Google 뉴스 응답 오류')
+  }
+
+  const raw = await response.text()
+  if (typeof DOMParser === 'undefined') {
+    throw new Error('RSS 파서를 초기화할 수 없습니다.')
+  }
+
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(raw, 'application/xml')
+  if (doc.querySelector('parsererror')) {
+    throw new Error('Google 뉴스 RSS 파싱 오류')
+  }
+  const itemNodes = Array.from(doc.querySelectorAll('item'))
+
+  return itemNodes
+    .map((node, index) => {
+      const title = node.querySelector('title')?.textContent?.trim() ?? ''
+      const link = node.querySelector('link')?.textContent?.trim() ?? ''
+      const description = node.querySelector('description')?.textContent ?? ''
+      const sourceLabel = node.querySelector('source')?.textContent?.trim() ?? ''
+      const guid = node.querySelector('guid')?.textContent?.trim() ?? ''
+      const publishedAt = parseRssPublishedAt(node.querySelector('pubDate')?.textContent ?? undefined)
+
+      if (!title || !link || !publishedAt) {
+        return null
+      }
+
+      let source = sourceLabel
+      if (!source) {
+        try {
+          const derived = new URL(link)
+          source = derived.hostname.replace(/^www\./, '')
+        } catch (error) {
+          console.warn('뉴스 출처 정보를 파싱하지 못했습니다.', error)
+          source = '출처 미확인'
+        }
+      }
+
+      const id = guid || `${link}-${index}`
+
+      return {
+        id,
+        title,
+        summary: stripHtml(description),
+        url: link,
+        source,
         publishedAt,
       }
     })
