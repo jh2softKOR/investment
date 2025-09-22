@@ -176,6 +176,9 @@ const MarketOverview = () => {
     return `${sign}${formatted}%`
   }
 
+  const fallbackLabel =
+    status === 'loading' ? '불러오는 중' : status === 'error' ? '수신 실패' : '데이터 없음'
+
   return (
     <section className="section" aria-labelledby="market-overview-heading">
       <div className="section-header">
@@ -185,11 +188,28 @@ const MarketOverview = () => {
         </div>
       </div>
 
-      {status === 'error' && (
-        <div className="status-banner" role="alert">
-          가격 정보를 불러오는 중 문제가 발생했습니다. 네트워크 상태를 확인해주세요.
-        </div>
-      )}
+      <div className="market-summary" aria-live="polite">
+        {assets.map((asset) => {
+          const price = prices[asset.id]?.price ?? null
+          const changePercent = prices[asset.id]?.changePercent ?? null
+          const changeLabel = formatChange(changePercent)
+          const summaryPriceLabel =
+            price !== null ? formatPrice(price, asset.formatOptions) : fallbackLabel
+          const summaryChangeLabel = changeLabel ?? fallbackLabel
+          const summaryState =
+            changePercent === null ? 'neutral' : changePercent >= 0 ? 'up' : 'down'
+
+          return (
+            <div className={`market-summary-item ${summaryState}`} key={asset.id}>
+              <span className="market-summary-name">{asset.title}</span>
+              <div className="market-summary-metrics">
+                <span className="market-summary-price">{summaryPriceLabel}</span>
+                <span className="market-summary-change">{summaryChangeLabel}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
 
       <div className="chart-grid">
         {assets.map((asset) => {

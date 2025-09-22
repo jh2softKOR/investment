@@ -104,6 +104,63 @@
   font-size: 0.95rem;
 }
 
+.market-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.1rem;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(71, 85, 105, 0.35);
+}
+
+.market-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(71, 85, 105, 0.4);
+  color: rgba(226, 232, 240, 0.85);
+}
+
+.market-summary-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.market-summary-metrics {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.market-summary-price {
+  color: rgba(226, 232, 240, 0.7);
+  font-size: 0.85rem;
+}
+
+.market-summary-change {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.market-summary-item.up .market-summary-change {
+  color: #4ade80;
+}
+
+.market-summary-item.down .market-summary-change {
+  color: #f87171;
+}
+
+.market-summary-item.neutral .market-summary-change {
+  color: rgba(226, 232, 240, 0.6);
+}
+
 .segmented-control {
   display: inline-flex;
   border-radius: 999px;
