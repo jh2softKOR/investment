@@ -45,7 +45,7 @@ const assets: AssetConfig[] = [
     title: '비트코인 (BTC)',
     subtitle: '디지털 자산 시장의 방향성 지표',
     chartSymbol: 'BITSTAMP:BTCUSD',
-    priceSource: { provider: 'binance', symbol: 'BTCUSDT' },
+    priceSource: { provider: 'yahoo', symbol: 'BTC-USD' },
     formatOptions: { maximumFractionDigits: 0 },
     tags: ['코인', '주요 코인'],
   },
@@ -54,7 +54,7 @@ const assets: AssetConfig[] = [
     title: '이더리움 (ETH)',
     subtitle: '스마트 컨트랙트 생태계의 핵심 자산',
     chartSymbol: 'BITSTAMP:ETHUSD',
-    priceSource: { provider: 'binance', symbol: 'ETHUSDT' },
+    priceSource: { provider: 'yahoo', symbol: 'ETH-USD' },
     formatOptions: { maximumFractionDigits: 0 },
     tags: ['코인'],
   },
@@ -63,7 +63,7 @@ const assets: AssetConfig[] = [
     title: '리플 (XRP)',
     subtitle: '국경 간 송금 네트워크 기반 디지털 자산',
     chartSymbol: 'BITSTAMP:XRPUSD',
-    priceSource: { provider: 'binance', symbol: 'XRPUSDT' },
+    priceSource: { provider: 'yahoo', symbol: 'XRP-USD' },
     formatOptions: { maximumFractionDigits: 4 },
     tags: ['코인'],
   },
@@ -85,6 +85,13 @@ const baseFormatOptions: Intl.NumberFormatOptions = {
 const MarketOverview = () => {
   const [prices, setPrices] = useState<Record<string, PriceInfo>>({})
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
+  const [providerStatuses, setProviderStatuses] = useState<
+    Record<PriceProvider, 'idle' | 'loading' | 'error'>
+  >({
+    yahoo: 'loading',
+    binance: 'loading',
+    gateio: 'loading',
+  })
 
   const yahooSymbols = useMemo(
     () => assets.filter((asset) => asset.priceSource?.provider === 'yahoo').map((asset) => asset.priceSource!.symbol),
@@ -105,47 +112,101 @@ const MarketOverview = () => {
     let active = true
 
     const loadPrices = async () => {
+      const tasks: Array<{
+        provider: PriceProvider
+        promise: Promise<Record<string, PriceInfo>>
+      }> = []
+
+      if (yahooSymbols.length) {
+        tasks.push({ provider: 'yahoo', promise: fetchYahooQuotes(yahooSymbols) })
+      }
+      if (binanceSymbols.length) {
+        tasks.push({ provider: 'binance', promise: fetchBinanceQuotes(binanceSymbols) })
+      }
+      if (gateIoSymbols.length) {
+        tasks.push({ provider: 'gateio', promise: fetchGateIoQuotes(gateIoSymbols) })
+      }
+
+      if (!tasks.length) {
+        if (active) {
+          setStatus('idle')
+          setPrices({})
+          setProviderStatuses((prev) => ({ ...prev, yahoo: 'idle', binance: 'idle', gateio: 'idle' }))
+        }
+        return
+      }
+
       setStatus('loading')
+      setProviderStatuses((prev) => {
+        const next = { ...prev }
+        tasks.forEach(({ provider }) => {
+          next[provider] = 'loading'
+        })
+        return next
+      })
+
       try {
-        const [yahooResults, binanceResults, gateIoResults] = await Promise.all([
-          fetchYahooQuotes(yahooSymbols),
-          fetchBinanceQuotes(binanceSymbols),
-          fetchGateIoQuotes(gateIoSymbols),
-        ])
+        const settled = await Promise.allSettled(tasks.map((task) => task.promise))
 
         if (!active) {
           return
         }
 
-        const result: Record<string, PriceInfo> = {}
+        const providerResults: Partial<Record<PriceProvider, Record<string, PriceInfo>>> = {}
+        const nextProviderStatuses: Partial<Record<PriceProvider, 'idle' | 'error'>> = {}
+        let hasSuccess = false
 
-        assets.forEach((asset) => {
-          if (!asset.priceSource) {
-            return
-          }
-
-          const { provider, symbol } = asset.priceSource
-          let providerMap: Record<string, PriceInfo>
-          if (provider === 'yahoo') {
-            providerMap = yahooResults
-          } else if (provider === 'binance') {
-            providerMap = binanceResults
+        settled.forEach((result, index) => {
+          const provider = tasks[index].provider
+          if (result.status === 'fulfilled') {
+            providerResults[provider] = result.value
+            nextProviderStatuses[provider] = 'idle'
+            hasSuccess = true
           } else {
-            providerMap = gateIoResults
-          }
-          const info = providerMap[symbol]
-          if (info) {
-            result[asset.id] = info
+            console.error(`Failed to load ${provider} quotes`, result.reason)
+            nextProviderStatuses[provider] = 'error'
           }
         })
 
-        setPrices(result)
-        setStatus('idle')
+        setProviderStatuses((prev) => ({ ...prev, ...nextProviderStatuses }))
+        setStatus(hasSuccess ? 'idle' : 'error')
+
+        if (!hasSuccess) {
+          setPrices({})
+          return
+        }
+
+        const aggregated: Record<string, PriceInfo> = {}
+
+        assets.forEach((asset) => {
+          const source = asset.priceSource
+          if (!source) {
+            return
+          }
+
+          const providerMap = providerResults[source.provider]
+          const info = providerMap?.[source.symbol]
+          if (info) {
+            aggregated[asset.id] = info
+          }
+        })
+
+        setPrices(aggregated)
       } catch (error) {
         console.error(error)
-        if (active) {
-          setStatus('error')
+        if (!active) {
+          return
         }
+
+        setStatus('error')
+        setProviderStatuses((prev) => {
+          const next = { ...prev }
+          tasks.forEach(({ provider }) => {
+            next[provider] = 'error'
+          })
+          return next
+        })
+        setPrices({})
       }
     }
 
@@ -176,8 +237,20 @@ const MarketOverview = () => {
     return `${sign}${formatted}%`
   }
 
-  const fallbackLabel =
-    status === 'loading' ? '불러오는 중' : status === 'error' ? '수신 실패' : '데이터 없음'
+  const getFallbackLabel = (provider?: PriceProvider) => {
+    if (!provider) {
+      return status === 'loading' ? '불러오는 중' : status === 'error' ? '수신 실패' : '데이터 없음'
+    }
+
+    const providerStatus = providerStatuses[provider]
+    if (providerStatus === 'loading') {
+      return '불러오는 중'
+    }
+    if (providerStatus === 'error') {
+      return '수신 실패'
+    }
+    return '데이터 없음'
+  }
 
   return (
     <section className="section" aria-labelledby="market-overview-heading">
@@ -193,6 +266,7 @@ const MarketOverview = () => {
           const price = prices[asset.id]?.price ?? null
           const changePercent = prices[asset.id]?.changePercent ?? null
           const changeLabel = formatChange(changePercent)
+          const fallbackLabel = getFallbackLabel(asset.priceSource?.provider)
           const summaryPriceLabel =
             price !== null ? formatPrice(price, asset.formatOptions) : fallbackLabel
           const summaryChangeLabel = changeLabel ?? fallbackLabel
@@ -216,6 +290,7 @@ const MarketOverview = () => {
           const price = prices[asset.id]?.price ?? null
           const changePercent = prices[asset.id]?.changePercent ?? null
           const changeLabel = formatChange(changePercent)
+          const fallbackLabel = getFallbackLabel(asset.priceSource?.provider)
           const changeClass = changePercent !== null ? (changePercent >= 0 ? 'change up' : 'change down') : 'change'
 
           return (
@@ -226,8 +301,14 @@ const MarketOverview = () => {
                   <p className="asset-subtitle">{asset.subtitle}</p>
                 </div>
                 <div className="price-row">
-                  <span>{formatPrice(price, asset.formatOptions)}</span>
-                  {changeLabel ? <span className={changeClass}>{changeLabel}</span> : <span className="change">-</span>}
+                  <span>
+                    {price !== null ? formatPrice(price, asset.formatOptions) : fallbackLabel}
+                  </span>
+                  {changeLabel ? (
+                    <span className={changeClass}>{changeLabel}</span>
+                  ) : (
+                    <span className="change">{fallbackLabel}</span>
+                  )}
                 </div>
                 {asset.tags && asset.tags.length > 0 && (
                   <div className="asset-tags">

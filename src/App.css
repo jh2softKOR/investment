@@ -105,14 +105,28 @@
 }
 
 .market-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
   gap: 0.75rem;
   margin-bottom: 1.5rem;
   padding: 1rem 1.1rem;
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.55);
   border: 1px solid rgba(71, 85, 105, 0.35);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+.market-summary::-webkit-scrollbar {
+  height: 6px;
+}
+
+.market-summary::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
 }
 
 .market-summary-item {
@@ -124,6 +138,8 @@
   background: rgba(30, 41, 59, 0.6);
   border: 1px solid rgba(71, 85, 105, 0.4);
   color: rgba(226, 232, 240, 0.85);
+  flex: 1 1 220px;
+  min-width: 220px;
 }
 
 .market-summary-name {
