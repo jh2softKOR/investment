@@ -10,11 +10,12 @@ const TradingViewChart = ({ symbol, interval = '15', theme = 'dark' }: TradingVi
   const containerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    if (!containerRef.current) {
+    const container = containerRef.current
+    if (!container) {
       return
     }
 
-    containerRef.current.innerHTML = ''
+    container.innerHTML = ''
 
     const script = document.createElement('script')
     script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js'
@@ -38,12 +39,10 @@ const TradingViewChart = ({ symbol, interval = '15', theme = 'dark' }: TradingVi
       support_host: 'https://www.tradingview.com',
     })
 
-    containerRef.current.appendChild(script)
+    container.appendChild(script)
 
     return () => {
-      if (containerRef.current) {
-        containerRef.current.innerHTML = ''
-      }
+      container.innerHTML = ''
     }
   }, [symbol, interval, theme])
 

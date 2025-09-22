@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import TradingViewChart from './TradingViewChart'
 
-type PriceProvider = 'yahoo' | 'binance'
+type PriceProvider = 'yahoo' | 'binance' | 'gateio'
 
 type AssetConfig = {
   id: string
@@ -72,6 +72,7 @@ const assets: AssetConfig[] = [
     title: '벅스 (BGSC) 선물',
     subtitle: 'BGSC 페르페추얼 스왑 (15분 봉 기본)',
     chartSymbol: 'BINGX:BGSCUSDT.P',
+    priceSource: { provider: 'gateio', symbol: 'BGSC_USDT' },
     tags: ['코인 선물', '파생상품'],
   },
 ]
@@ -95,13 +96,22 @@ const MarketOverview = () => {
     []
   )
 
+  const gateIoSymbols = useMemo(
+    () => assets.filter((asset) => asset.priceSource?.provider === 'gateio').map((asset) => asset.priceSource!.symbol),
+    []
+  )
+
   useEffect(() => {
     let active = true
 
     const loadPrices = async () => {
       setStatus('loading')
       try {
-        const [yahooResults, binanceResults] = await Promise.all([fetchYahooQuotes(yahooSymbols), fetchBinanceQuotes(binanceSymbols)])
+        const [yahooResults, binanceResults, gateIoResults] = await Promise.all([
+          fetchYahooQuotes(yahooSymbols),
+          fetchBinanceQuotes(binanceSymbols),
+          fetchGateIoQuotes(gateIoSymbols),
+        ])
 
         if (!active) {
           return
@@ -115,7 +125,14 @@ const MarketOverview = () => {
           }
 
           const { provider, symbol } = asset.priceSource
-          const providerMap = provider === 'yahoo' ? yahooResults : binanceResults
+          let providerMap: Record<string, PriceInfo>
+          if (provider === 'yahoo') {
+            providerMap = yahooResults
+          } else if (provider === 'binance') {
+            providerMap = binanceResults
+          } else {
+            providerMap = gateIoResults
+          }
           const info = providerMap[symbol]
           if (info) {
             result[asset.id] = info
@@ -139,7 +156,7 @@ const MarketOverview = () => {
       active = false
       window.clearInterval(interval)
     }
-  }, [binanceSymbols, yahooSymbols])
+  }, [binanceSymbols, gateIoSymbols, yahooSymbols])
 
   const formatPrice = (value: number | null, options?: Intl.NumberFormatOptions) => {
     if (value === null || value === undefined) {
@@ -268,6 +285,47 @@ const fetchBinanceQuotes = async (symbols: string[]): Promise<Record<string, Pri
     }
   })
   return mapped
+}
+
+const fetchGateIoQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {
+  if (!symbols.length) {
+    return {}
+  }
+
+  const results = await Promise.all(
+    symbols.map(async (symbol) => {
+      const url = new URL('https://api.gateio.ws/api/v4/futures/usdt/tickers')
+      url.searchParams.set('contract', symbol)
+
+      const response = await fetch(url.toString())
+      if (!response.ok) {
+        throw new Error('Gate.io 응답 오류')
+      }
+
+      const payload = (await response.json()) as Array<{
+        contract?: string
+        last?: string
+        change_percentage?: string
+      }> | {
+        contract?: string
+        last?: string
+        change_percentage?: string
+      }
+
+      const ticker = Array.isArray(payload)
+        ? payload.find((item) => item.contract === symbol) ?? payload[0]
+        : payload.contract === symbol || !payload.contract
+          ? payload
+          : null
+
+      const price = ticker?.last ? Number.parseFloat(ticker.last) : null
+      const changePercent = ticker?.change_percentage ? Number.parseFloat(ticker.change_percentage) : null
+
+      return [symbol, { price, changePercent }] as const
+    })
+  )
+
+  return Object.fromEntries(results)
 }
 
 export default MarketOverview
