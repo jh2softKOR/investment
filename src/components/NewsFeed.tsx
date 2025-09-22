@@ -18,7 +18,19 @@ type AlphaVantageNewsItem = {
   uuid?: string
 }
 
-const parsePublishedAt = (value?: string): Date | null => {
+type FmpNewsItem = {
+  title?: string
+  url?: string
+  text?: string
+  site?: string
+  publishedDate?: string
+  symbol?: string
+  symbols?: string[]
+  news_id?: string
+  id?: string | number
+}
+
+const parseAlphaVantagePublishedAt = (value?: string): Date | null => {
   if (!value) {
     return null
   }
@@ -32,6 +44,18 @@ const parsePublishedAt = (value?: string): Date | null => {
 
   const [, year, month, day, hour, minute, second] = match
   const isoString = `${year}-${month}-${day}T${hour}:${minute}:${second}Z`
+  const parsed = new Date(isoString)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+const parseFmpPublishedAt = (value?: string): Date | null => {
+  if (!value) {
+    return null
+  }
+
+  const normalized = value.replace(' ', 'T')
+  const hasTimezone = /[zZ]|[+-][0-9]{2}:?[0-9]{2}$/.test(normalized)
+  const isoString = hasTimezone ? normalized : `${normalized}Z`
   const parsed = new Date(isoString)
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
@@ -73,40 +97,39 @@ const NewsFeed = () => {
     const loadNews = async () => {
       setStatus('loading')
       try {
-        const apiKey = import.meta.env.VITE_ALPHA_VANTAGE_KEY || 'demo'
-        const url = new URL('https://www.alphavantage.co/query')
-        url.searchParams.set('function', 'NEWS_SENTIMENT')
-        url.searchParams.set('topics', 'financial_markets')
-        url.searchParams.set('sort', 'LATEST')
-        url.searchParams.set('limit', '12')
-        url.searchParams.set('apikey', apiKey)
+        const fmpKey = import.meta.env.VITE_FMP_KEY || 'demo'
+        const alphaVantageKey = import.meta.env.VITE_ALPHA_VANTAGE_KEY || 'demo'
 
-        const response = await fetch(url)
-        if (!response.ok) {
-          throw new Error('뉴스 응답 오류')
+        let normalized: NewsItem[] = []
+        const errors: unknown[] = []
+
+        try {
+          normalized = await fetchFmpNews(fmpKey)
+        } catch (error) {
+          errors.push(error)
         }
 
-        const payload = await response.json()
-        const feed = (payload?.feed ?? []) as AlphaVantageNewsItem[]
-        const normalized = feed
-          .map((item) => {
-            const publishedAt = parsePublishedAt(item.time_published)
-            if (!item.title || !item.url || !publishedAt) {
-              return null
-            }
-            return {
-              id: item.uuid ?? `${item.title}-${item.url}`,
-              title: item.title,
-              summary: item.summary ?? '',
-              url: item.url,
-              source: item.source ?? '출처 미확인',
-              publishedAt,
-            }
-          })
-          .filter((item): item is NewsItem => Boolean(item))
-          .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
+        if (!normalized.length) {
+          try {
+            normalized = await fetchAlphaVantageNews(alphaVantageKey)
+          } catch (error) {
+            errors.push(error)
+          }
+        }
 
         if (!active) {
+          return
+        }
+
+        if (!normalized.length) {
+          if (errors.length > 0) {
+            throw errors[0] instanceof Error
+              ? errors[0]
+              : new Error('뉴스 데이터를 불러오는 데 실패했습니다.')
+          }
+
+          setNews([])
+          setStatus('idle')
           return
         }
 
@@ -169,6 +192,89 @@ const NewsFeed = () => {
       )}
     </section>
   )
+}
+
+const fetchFmpNews = async (apiKey: string): Promise<NewsItem[]> => {
+  if (!apiKey) {
+    return []
+  }
+
+  const url = new URL('https://financialmodelingprep.com/api/v3/stock_news')
+  url.searchParams.set('limit', '50')
+  url.searchParams.set('apikey', apiKey)
+
+  const response = await fetch(url.toString())
+  if (!response.ok) {
+    throw new Error('Financial Modeling Prep 뉴스 응답 오류')
+  }
+
+  const payload = (await response.json()) as FmpNewsItem[] | { error?: string }
+  if (!Array.isArray(payload)) {
+    throw new Error('Financial Modeling Prep 뉴스 데이터 형식 오류')
+  }
+
+  return payload
+    .map((item) => {
+      const publishedAt = parseFmpPublishedAt(item.publishedDate)
+      if (!item.title || !item.url || !publishedAt) {
+        return null
+      }
+
+      const id = item.news_id ?? item.id ?? `${item.title}-${item.publishedDate ?? item.url}`
+      const source = item.site || (item.symbols && item.symbols.length > 0 ? item.symbols.join(', ') : '출처 미확인')
+
+      const summary = item.text ? item.text.replace(/<[^>]*>/g, '').trim() : ''
+
+      return {
+        id: typeof id === 'string' ? id : `${id}`,
+        title: item.title,
+        summary,
+        url: item.url,
+        source,
+        publishedAt,
+      }
+    })
+    .filter((item): item is NewsItem => Boolean(item))
+    .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
+}
+
+const fetchAlphaVantageNews = async (apiKey: string): Promise<NewsItem[]> => {
+  if (!apiKey) {
+    return []
+  }
+
+  const url = new URL('https://www.alphavantage.co/query')
+  url.searchParams.set('function', 'NEWS_SENTIMENT')
+  url.searchParams.set('topics', 'financial_markets')
+  url.searchParams.set('sort', 'LATEST')
+  url.searchParams.set('limit', '12')
+  url.searchParams.set('apikey', apiKey)
+
+  const response = await fetch(url.toString())
+  if (!response.ok) {
+    throw new Error('Alpha Vantage 뉴스 응답 오류')
+  }
+
+  const payload = await response.json()
+  const feed = Array.isArray(payload?.feed) ? (payload.feed as AlphaVantageNewsItem[]) : []
+
+  return feed
+    .map((item) => {
+      const publishedAt = parseAlphaVantagePublishedAt(item.time_published)
+      if (!item.title || !item.url || !publishedAt) {
+        return null
+      }
+      return {
+        id: item.uuid ?? `${item.title}-${item.url}`,
+        title: item.title,
+        summary: item.summary ?? '',
+        url: item.url,
+        source: item.source ?? '출처 미확인',
+        publishedAt,
+      }
+    })
+    .filter((item): item is NewsItem => Boolean(item))
+    .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
 }
 
 export default NewsFeed
