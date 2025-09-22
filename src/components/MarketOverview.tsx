@@ -71,7 +71,7 @@ const assets: AssetConfig[] = [
     id: 'bgsc',
     title: '벅스 (BGSC) 선물',
     subtitle: 'BGSC 페르페추얼 스왑 (15분 봉 기본)',
-    chartSymbol: 'BINGX:BGSCUSDT.P',
+    chartSymbol: 'GATEIO:BGSCUSDT.P',
     priceSource: { provider: 'gateio', symbol: 'BGSC_USDT' },
     tags: ['코인 선물', '파생상품'],
   },
