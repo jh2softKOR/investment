@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { fetchWithProxies } from '../utils/proxyFetch'
 import FearGreedIndex from './FearGreedIndex'
+import YieldSpreadCard from './YieldSpreadCard'
 import TradingViewChart from './TradingViewChart'
+import {
+  fetchBinanceQuotes,
+  fetchFmpQuotes,
+  fetchGateIoQuotes,
+  fetchYahooQuotes,
+} from '../utils/marketData'
+import type { PriceInfo } from '../utils/marketData'
 
 const priceProviders = ['yahoo', 'binance', 'gateio', 'fmp'] as const
 type PriceProvider = (typeof priceProviders)[number]
@@ -18,22 +25,19 @@ const createProviderMessageState = (initial: string | null = null) =>
     string | null
   >
 
+type PriceSource = {
+  provider: PriceProvider
+  symbol: string
+}
+
 type AssetConfig = {
   id: string
   title: string
   subtitle: string
   chartSymbol: string
-  priceSource?: {
-    provider: PriceProvider
-    symbol: string
-  }
+  priceSources: PriceSource[]
   formatOptions?: Intl.NumberFormatOptions
   tags?: string[]
-}
-
-type PriceInfo = {
-  price: number | null
-  changePercent: number | null
 }
 
 const assets: AssetConfig[] = [
@@ -42,7 +46,10 @@ const assets: AssetConfig[] = [
     title: '나스닥 종합지수',
     subtitle: '미국 기술주의 흐름을 가늠하는 대표 지수',
     chartSymbol: 'NASDAQ:IXIC',
-    priceSource: { provider: 'yahoo', symbol: '^IXIC' },
+    priceSources: [
+      { provider: 'yahoo', symbol: '^IXIC' },
+      { provider: 'fmp', symbol: '^IXIC' },
+    ],
     formatOptions: { maximumFractionDigits: 2 },
     tags: ['미 증시', '인덱스'],
   },
@@ -51,7 +58,10 @@ const assets: AssetConfig[] = [
     title: '다우존스 산업평균',
     subtitle: '전통 우량주 중심의 벤치마크 지수',
     chartSymbol: 'DJI',
-    priceSource: { provider: 'yahoo', symbol: '^DJI' },
+    priceSources: [
+      { provider: 'yahoo', symbol: '^DJI' },
+      { provider: 'fmp', symbol: '^DJI' },
+    ],
     formatOptions: { maximumFractionDigits: 2 },
     tags: ['미 증시', '인덱스'],
   },
@@ -60,7 +70,7 @@ const assets: AssetConfig[] = [
     title: '비트코인 (BTC)',
     subtitle: '디지털 자산 시장의 방향성 지표',
     chartSymbol: 'BITSTAMP:BTCUSD',
-    priceSource: { provider: 'binance', symbol: 'BTCUSDT' },
+    priceSources: [{ provider: 'binance', symbol: 'BTCUSDT' }],
     formatOptions: { maximumFractionDigits: 0 },
     tags: ['코인', '주요 코인'],
   },
@@ -69,7 +79,7 @@ const assets: AssetConfig[] = [
     title: '이더리움 (ETH)',
     subtitle: '스마트 컨트랙트 생태계의 핵심 자산',
     chartSymbol: 'BITSTAMP:ETHUSD',
-    priceSource: { provider: 'binance', symbol: 'ETHUSDT' },
+    priceSources: [{ provider: 'binance', symbol: 'ETHUSDT' }],
     formatOptions: { maximumFractionDigits: 0 },
     tags: ['코인'],
   },
@@ -78,7 +88,7 @@ const assets: AssetConfig[] = [
     title: '리플 (XRP)',
     subtitle: '국경 간 송금 네트워크 기반 디지털 자산',
     chartSymbol: 'BITSTAMP:XRPUSD',
-    priceSource: { provider: 'binance', symbol: 'XRPUSDT' },
+    priceSources: [{ provider: 'binance', symbol: 'XRPUSDT' }],
     formatOptions: { maximumFractionDigits: 4 },
     tags: ['코인'],
   },
@@ -87,7 +97,7 @@ const assets: AssetConfig[] = [
     title: '벅스 (BGSC) 선물',
     subtitle: 'BGSC 페르페추얼 스왑 (15분 봉 기본)',
     chartSymbol: 'GATEIO:BGSCUSDT.P',
-    priceSource: { provider: 'gateio', symbol: 'BGSC_USDT' },
+    priceSources: [{ provider: 'gateio', symbol: 'BGSC_USDT' }],
     tags: ['코인 선물', '파생상품'],
   },
 ]
@@ -97,60 +107,40 @@ const baseFormatOptions: Intl.NumberFormatOptions = {
   maximumFractionDigits: 2,
 }
 
-const parseNumericValue = (value: unknown): number | null => {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim()
-    if (!trimmed) {
-      return null
-    }
-
-    const cleaned = trimmed.replace(/[,%()]/g, '')
-    if (!cleaned) {
-      return null
-    }
-
-    const parsed = Number.parseFloat(cleaned)
-    return Number.isNaN(parsed) ? null : parsed
-  }
-
-  return null
-}
-
-const usdKrwSymbol = 'KRW=X' as const
-
 const MarketOverview = () => {
   const [prices, setPrices] = useState<Record<string, PriceInfo>>({})
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
   const [providerStatuses, setProviderStatuses] = useState(() => createProviderStatusState('loading'))
   const [providerMessages, setProviderMessages] = useState(() => createProviderMessageState())
-  const [usdKrw, setUsdKrw] = useState<PriceInfo | null>(null)
-  const [usdKrwStatus, setUsdKrwStatus] = useState<'idle' | 'loading' | 'error'>('loading')
 
   const fmpApiKey = import.meta.env.VITE_FMP_KEY?.trim() ?? ''
 
-  const yahooSymbols = useMemo(
-    () => assets.filter((asset) => asset.priceSource?.provider === 'yahoo').map((asset) => asset.priceSource!.symbol),
-    []
-  )
+  const providerSymbols = useMemo(() => {
+    const symbolSets: Record<PriceProvider, Set<string>> = {
+      yahoo: new Set<string>(),
+      binance: new Set<string>(),
+      gateio: new Set<string>(),
+      fmp: new Set<string>(),
+    }
 
-  const binanceSymbols = useMemo(
-    () => assets.filter((asset) => asset.priceSource?.provider === 'binance').map((asset) => asset.priceSource!.symbol),
-    []
-  )
+    assets.forEach((asset) => {
+      asset.priceSources.forEach((source) => {
+        symbolSets[source.provider].add(source.symbol)
+      })
+    })
 
-  const gateIoSymbols = useMemo(
-    () => assets.filter((asset) => asset.priceSource?.provider === 'gateio').map((asset) => asset.priceSource!.symbol),
-    []
-  )
+    return {
+      yahoo: Array.from(symbolSets.yahoo),
+      binance: Array.from(symbolSets.binance),
+      gateio: Array.from(symbolSets.gateio),
+      fmp: Array.from(symbolSets.fmp),
+    }
+  }, [])
 
-  const fmpSymbols = useMemo(
-    () => assets.filter((asset) => asset.priceSource?.provider === 'fmp').map((asset) => asset.priceSource!.symbol),
-    []
-  )
+  const yahooSymbols = providerSymbols.yahoo
+  const binanceSymbols = providerSymbols.binance
+  const gateIoSymbols = providerSymbols.gateio
+  const fmpSymbols = providerSymbols.fmp
 
   useEffect(() => {
     let active = true
@@ -162,10 +152,8 @@ const MarketOverview = () => {
       }> = []
       const missingProviders: PriceProvider[] = []
 
-      const yahooTaskSymbols = Array.from(new Set([...yahooSymbols, usdKrwSymbol]))
-
-      if (yahooTaskSymbols.length) {
-        tasks.push({ provider: 'yahoo', promise: fetchYahooQuotes(yahooTaskSymbols) })
+      if (yahooSymbols.length) {
+        tasks.push({ provider: 'yahoo', promise: fetchYahooQuotes(yahooSymbols) })
       }
       if (binanceSymbols.length) {
         tasks.push({ provider: 'binance', promise: fetchBinanceQuotes(binanceSymbols) })
@@ -185,8 +173,6 @@ const MarketOverview = () => {
         if (active) {
           setStatus(missingProviders.length ? 'error' : 'idle')
           setPrices({})
-          setUsdKrw(null)
-          setUsdKrwStatus('error')
           const nextStatuses = createProviderStatusState('idle')
           missingProviders.forEach((provider) => {
             nextStatuses[provider] = 'error'
@@ -203,9 +189,6 @@ const MarketOverview = () => {
       }
 
       setStatus('loading')
-      if (tasks.some((task) => task.provider === 'yahoo')) {
-        setUsdKrwStatus('loading')
-      }
       setProviderStatuses((prev) => {
         const next = { ...prev }
         tasks.forEach(({ provider }) => {
@@ -259,39 +242,23 @@ const MarketOverview = () => {
 
         if (!hasSuccess) {
           setPrices({})
-          setUsdKrw(null)
-          setUsdKrwStatus('error')
           return
         }
 
         const aggregated: Record<string, PriceInfo> = {}
 
         assets.forEach((asset) => {
-          const source = asset.priceSource
-          if (!source) {
-            return
-          }
-
-          const providerMap = providerResults[source.provider]
-          const info = providerMap?.[source.symbol]
-          if (info) {
-            aggregated[asset.id] = info
+          for (const source of asset.priceSources) {
+            const providerMap = providerResults[source.provider]
+            const info = providerMap?.[source.symbol]
+            if (info && (info.price !== null || info.changePercent !== null)) {
+              aggregated[asset.id] = info
+              break
+            }
           }
         })
 
         setPrices(aggregated)
-
-        const yahooMap = providerResults.yahoo
-        if (yahooMap) {
-          const nextUsdKrw = yahooMap[usdKrwSymbol] ?? null
-          const hasUsdKrwValue =
-            nextUsdKrw && (nextUsdKrw.price !== null || nextUsdKrw.changePercent !== null)
-          setUsdKrw(nextUsdKrw ?? null)
-          setUsdKrwStatus(hasUsdKrwValue ? 'idle' : 'error')
-        } else if (nextProviderStatuses.yahoo === 'error') {
-          setUsdKrw(null)
-          setUsdKrwStatus('error')
-        }
       } catch (error) {
         console.error(error)
         if (!active) {
@@ -314,8 +281,6 @@ const MarketOverview = () => {
           return next
         })
         setPrices({})
-        setUsdKrw(null)
-        setUsdKrwStatus('error')
       }
     }
 
@@ -366,28 +331,6 @@ const MarketOverview = () => {
     return '데이터 없음'
   }
 
-  const usdKrwFallbackLabel = getFallbackLabel('yahoo')
-  const usdKrwPriceLabel =
-    usdKrw?.price !== null && usdKrw?.price !== undefined
-      ? new Intl.NumberFormat('ko-KR', {
-          style: 'currency',
-          currency: 'KRW',
-          minimumFractionDigits: 0,
-          maximumFractionDigits: 2,
-        }).format(usdKrw.price)
-      : usdKrwFallbackLabel
-
-  const usdKrwChangeLabel =
-    usdKrw?.changePercent !== null && usdKrw?.changePercent !== undefined
-      ? formatChange(usdKrw.changePercent)
-      : null
-  const usdKrwChangeClass =
-    usdKrw?.changePercent !== null && usdKrw?.changePercent !== undefined
-      ? usdKrw.changePercent >= 0
-        ? 'usd-krw-change up'
-        : 'usd-krw-change down'
-      : 'usd-krw-change'
-
   return (
     <section className="section" aria-labelledby="market-overview-heading">
       <div className="section-header">
@@ -398,30 +341,9 @@ const MarketOverview = () => {
       </div>
 
       <div className="market-top-row">
-        <FearGreedIndex className="prominent" />
-        <div
-          className="usd-krw-card"
-          role="complementary"
-          aria-live="polite"
-          aria-busy={usdKrwStatus === 'loading'}
-          data-state={usdKrwStatus}
-        >
-          <div className="usd-krw-header">
-            <span className="usd-krw-title">원/달러 환율</span>
-            <span className="usd-krw-subtitle">KRW=X · 1 USD 기준</span>
-          </div>
-          <div className="usd-krw-value-row">
-            <strong className="usd-krw-value">{usdKrwPriceLabel}</strong>
-            {usdKrwChangeLabel ? (
-              <span className={usdKrwChangeClass}>{usdKrwChangeLabel}</span>
-            ) : (
-              <span className="usd-krw-change placeholder">{usdKrwFallbackLabel}</span>
-            )}
-          </div>
-          <p className="usd-krw-meta">
-            서울 외환시장 실시간 환율 · 야후 파이낸스 · 1분 단위 자동 갱신
-          </p>
-        </div>
+        <FearGreedIndex className="prominent" variant="us-market" />
+        <FearGreedIndex variant="crypto" />
+        <YieldSpreadCard />
       </div>
 
       <div className="market-summary" aria-live="polite">
@@ -429,10 +351,12 @@ const MarketOverview = () => {
           const price = prices[asset.id]?.price ?? null
           const changePercent = prices[asset.id]?.changePercent ?? null
           const changeLabel = formatChange(changePercent)
-          const fallbackLabel = getFallbackLabel(asset.priceSource?.provider)
+          const fallbackProvider = asset.priceSources[0]?.provider
+          const fallbackLabel = getFallbackLabel(fallbackProvider)
           const summaryPriceLabel =
             price !== null ? formatPrice(price, asset.formatOptions) : fallbackLabel
-          const summaryChangeLabel = changeLabel ?? fallbackLabel
+          const summaryChangeLabel =
+            changeLabel ?? (price !== null ? '데이터 없음' : fallbackLabel)
           const summaryState =
             changePercent === null ? 'neutral' : changePercent >= 0 ? 'up' : 'down'
 
@@ -453,8 +377,10 @@ const MarketOverview = () => {
           const price = prices[asset.id]?.price ?? null
           const changePercent = prices[asset.id]?.changePercent ?? null
           const changeLabel = formatChange(changePercent)
-          const fallbackLabel = getFallbackLabel(asset.priceSource?.provider)
+          const fallbackProvider = asset.priceSources[0]?.provider
+          const fallbackLabel = getFallbackLabel(fallbackProvider)
           const changeClass = changePercent !== null ? (changePercent >= 0 ? 'change up' : 'change down') : 'change'
+          const fallbackChangeLabel = changeLabel ?? (price !== null ? '데이터 없음' : fallbackLabel)
 
           return (
             <article className="chart-card" key={asset.id}>
@@ -470,7 +396,7 @@ const MarketOverview = () => {
                   {changeLabel ? (
                     <span className={changeClass}>{changeLabel}</span>
                   ) : (
-                    <span className="change">{fallbackLabel}</span>
+                    <span className="change">{fallbackChangeLabel}</span>
                   )}
                 </div>
                 {asset.tags && asset.tags.length > 0 && (
@@ -480,7 +406,9 @@ const MarketOverview = () => {
                     ))}
                   </div>
                 )}
-                {!asset.priceSource && <p className="helper-text">실시간 가격 데이터 제공 준비 중입니다.</p>}
+                {asset.priceSources.length === 0 && (
+                  <p className="helper-text">실시간 가격 데이터 제공 준비 중입니다.</p>
+                )}
               </div>
               <TradingViewChart symbol={asset.chartSymbol} interval="15" />
             </article>
@@ -489,186 +417,6 @@ const MarketOverview = () => {
       </div>
     </section>
   )
-}
-
-const fetchFmpQuotes = async (
-  symbols: string[],
-  apiKey: string
-): Promise<Record<string, PriceInfo>> => {
-  if (!symbols.length || !apiKey) {
-    return {}
-  }
-
-  const encodedSymbols = symbols.map((symbol) => encodeURIComponent(symbol))
-  const url = new URL(
-    `https://financialmodelingprep.com/api/v3/quote/${encodedSymbols.join(',')}`
-  )
-  url.searchParams.set('apikey', apiKey)
-
-  const response = await fetchWithProxies(url)
-  if (!response.ok) {
-    throw new Error('Financial Modeling Prep 시세 응답 오류')
-  }
-
-  const data = (await response.json()) as Array<{
-    symbol?: string
-    price?: number | string | null
-    changesPercentage?: number | string | null
-  }>
-
-  const mapped: Record<string, PriceInfo> = {}
-  data.forEach((item) => {
-    if (!item.symbol) {
-      return
-    }
-
-    mapped[item.symbol] = {
-      price: parseNumericValue(item.price),
-      changePercent: parseNumericValue(item.changesPercentage),
-    }
-  })
-
-  return mapped
-}
-
-const fetchYahooQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {
-  if (!symbols.length) {
-    return {}
-  }
-
-  const url = new URL('https://query1.finance.yahoo.com/v7/finance/quote')
-  url.searchParams.set('symbols', symbols.join(','))
-
-  const response = await fetchWithProxies(url)
-  if (!response.ok) {
-    throw new Error('Yahoo Finance 응답 오류')
-  }
-
-  const data = await response.json()
-  const results = (data?.quoteResponse?.result ?? []) as Array<{
-    symbol?: string
-    regularMarketPrice?: number | string | null
-    regularMarketChangePercent?: number | string | null
-  }>
-
-  const mapped: Record<string, PriceInfo> = {}
-  results.forEach((item) => {
-    if (!item.symbol) {
-      return
-    }
-
-    const price = parseNumericValue(item.regularMarketPrice)
-    const changePercent = parseNumericValue(item.regularMarketChangePercent)
-
-    mapped[item.symbol] = {
-      price,
-      changePercent,
-    }
-  })
-  return mapped
-}
-
-const fetchBinanceQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {
-  if (!symbols.length) {
-    return {}
-  }
-
-  const url = new URL('https://api.binance.com/api/v3/ticker/24hr')
-  url.searchParams.set('symbols', JSON.stringify(symbols))
-  const headers = { Accept: 'application/json, text/plain, */*' }
-
-  const mapTickers = (
-    entries: Array<{ symbol: string; lastPrice?: string; priceChangePercent?: string }>
-  ) => {
-    const toNumber = (input?: string) => {
-      if (!input) {
-        return null
-      }
-      const parsed = Number.parseFloat(input)
-      return Number.isNaN(parsed) ? null : parsed
-    }
-
-    const mapped: Record<string, PriceInfo> = {}
-    entries.forEach((item) => {
-      mapped[item.symbol] = {
-        price: toNumber(item.lastPrice),
-        changePercent: toNumber(item.priceChangePercent),
-      }
-    })
-    return mapped
-  }
-
-  try {
-    const directResponse = await fetch(url.toString(), {
-      headers,
-      credentials: 'omit',
-    })
-    if (directResponse.ok) {
-      const payload = (await directResponse.json()) as Array<{
-        symbol: string
-        lastPrice?: string
-        priceChangePercent?: string
-      }>
-      return mapTickers(payload)
-    }
-    console.warn(`Binance 직접 응답 상태 코드: ${directResponse.status}`)
-  } catch (error) {
-    console.warn('Binance 직접 요청 실패, 프록시로 재시도합니다.', error)
-  }
-
-  const response = await fetchWithProxies(url, { headers })
-  if (!response.ok) {
-    throw new Error('Binance 응답 오류')
-  }
-
-  const data = (await response.json()) as Array<{
-    symbol: string
-    lastPrice?: string
-    priceChangePercent?: string
-  }>
-
-  return mapTickers(data)
-}
-
-const fetchGateIoQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {
-  if (!symbols.length) {
-    return {}
-  }
-
-  const results = await Promise.all(
-    symbols.map(async (symbol) => {
-      const url = new URL('https://api.gateio.ws/api/v4/futures/usdt/tickers')
-      url.searchParams.set('contract', symbol)
-
-      const response = await fetchWithProxies(url)
-      if (!response.ok) {
-        throw new Error('Gate.io 응답 오류')
-      }
-
-      const payload = (await response.json()) as Array<{
-        contract?: string
-        last?: string
-        change_percentage?: string
-      }> | {
-        contract?: string
-        last?: string
-        change_percentage?: string
-      }
-
-      const ticker = Array.isArray(payload)
-        ? payload.find((item) => item.contract === symbol) ?? payload[0]
-        : payload.contract === symbol || !payload.contract
-          ? payload
-          : null
-
-      const price = ticker?.last ? Number.parseFloat(ticker.last) : null
-      const changePercent = ticker?.change_percentage ? Number.parseFloat(ticker.change_percentage) : null
-
-      return [symbol, { price, changePercent }] as const
-    })
-  )
-
-  return Object.fromEntries(results)
 }
 
 export default MarketOverview
