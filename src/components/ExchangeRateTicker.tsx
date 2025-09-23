@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import { fetchFmpQuotes, fetchUsdKrwFromExchangeRateHost, fetchYahooQuotes } from '../utils/marketData'
+import {
+  fetchFmpQuotes,
+  fetchUsdKrwFromExchangeRateHost,
+  fetchWtiFromStooq,
+  fetchYahooQuotes,
+} from '../utils/marketData'
 import type { PriceInfo } from '../utils/marketData'
 
 const usdKrwSymbol = 'KRW=X' as const
@@ -49,13 +54,8 @@ const ExchangeRateTicker = () => {
         setOilStatus('loading')
       }
 
-      const resolveStatus = (info: PriceInfo | null) => {
-        if (!info) {
-          return 'error'
-        }
-
-        return info.price !== null || info.changePercent !== null ? 'idle' : 'error'
-      }
+      const hasMeaningfulInfo = (info: PriceInfo | null) =>
+        Boolean(info && (info.price !== null || info.changePercent !== null))
 
       const symbols = [usdKrwSymbol, wtiSymbol] as const
       let quotes: Record<string, PriceInfo> = {}
@@ -69,12 +69,12 @@ const ExchangeRateTicker = () => {
         const yahooRate = quotes[usdKrwSymbol] ?? null
         const yahooOil = quotes[wtiSymbol] ?? null
 
-        if (yahooRate && (yahooRate.price !== null || yahooRate.changePercent !== null)) {
+        if (hasMeaningfulInfo(yahooRate)) {
           setRate(yahooRate)
           setRateStatus('idle')
         }
 
-        if (yahooOil && (yahooOil.price !== null || yahooOil.changePercent !== null)) {
+        if (hasMeaningfulInfo(yahooOil)) {
           setOil(yahooOil)
           setOilStatus('idle')
         }
@@ -83,17 +83,26 @@ const ExchangeRateTicker = () => {
       }
 
       const resolveRateFallback = async () => {
+        if (!active) {
+          return
+        }
+
+        setRateStatus('loading')
+
         try {
           const fallbackInfo = await fetchUsdKrwFromExchangeRateHost()
           if (!active) {
             return
           }
 
-          setRate(fallbackInfo)
-          setRateStatus(resolveStatus(fallbackInfo))
-          if (!fallbackInfo) {
-            throw new Error('대체 환율 정보가 비어 있습니다.')
+          if (hasMeaningfulInfo(fallbackInfo)) {
+            setRate(fallbackInfo)
+            setRateStatus('idle')
+            return
           }
+
+          console.error('원/달러 환율 대체 데이터가 비어 있습니다.')
+          setRate(fallbackInfo)
         } catch (error) {
           console.error('원/달러 환율 로딩 실패', error)
           if (!active) {
@@ -101,11 +110,23 @@ const ExchangeRateTicker = () => {
           }
 
           setRate(null)
-          setRateStatus('error')
         }
+
+        if (!active) {
+          return
+        }
+
+        setRateStatus('error')
       }
 
       const resolveOilFallback = async () => {
+        if (!active) {
+          return
+        }
+
+        setOilStatus('loading')
+        let lastAttempt: PriceInfo | null = null
+
         try {
           const fallbackQuotes = await fetchFmpQuotes([wtiSymbol], fmpApiKey)
           if (!active) {
@@ -113,29 +134,52 @@ const ExchangeRateTicker = () => {
           }
 
           const fallbackInfo = fallbackQuotes[wtiSymbol] ?? null
-          setOil(fallbackInfo)
-          setOilStatus(resolveStatus(fallbackInfo))
-          if (!fallbackInfo) {
-            throw new Error('대체 국제 유가 정보가 비어 있습니다.')
+          lastAttempt = fallbackInfo
+
+          if (hasMeaningfulInfo(fallbackInfo)) {
+            setOil(fallbackInfo)
+            setOilStatus('idle')
+            return
           }
+
+          console.warn('Financial Modeling Prep 국제 유가 데이터가 유효하지 않습니다. Stooq 데이터를 시도합니다.')
         } catch (error) {
-          console.error('국제 유가 로딩 실패', error)
+          console.error('Financial Modeling Prep 국제 유가 로딩 실패, Stooq 데이터를 시도합니다.', error)
+        }
+
+        try {
+          const stooqInfo = await fetchWtiFromStooq()
           if (!active) {
             return
           }
 
-          setOil(null)
-          setOilStatus('error')
+          lastAttempt = stooqInfo
+          if (hasMeaningfulInfo(stooqInfo)) {
+            setOil(stooqInfo)
+            setOilStatus('idle')
+            return
+          }
+
+          console.error('Stooq 국제 유가 데이터가 비어 있습니다.')
+        } catch (error) {
+          console.error('Stooq 국제 유가 로딩 실패', error)
         }
+
+        if (!active) {
+          return
+        }
+
+        setOil(lastAttempt)
+        setOilStatus('error')
       }
 
       const nextRate = quotes[usdKrwSymbol] ?? null
-      if (!nextRate || (nextRate.price === null && nextRate.changePercent === null)) {
+      if (!hasMeaningfulInfo(nextRate)) {
         await resolveRateFallback()
       }
 
       const nextOil = quotes[wtiSymbol] ?? null
-      if (!nextOil || (nextOil.price === null && nextOil.changePercent === null)) {
+      if (!hasMeaningfulInfo(nextOil)) {
         await resolveOilFallback()
       }
     }

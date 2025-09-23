@@ -97,11 +97,8 @@ type ExchangeRateHostResponse = {
   base?: string
 }
 
-const fetchJsonDirect = async <T>(url: URL): Promise<T> => {
-  const response = await fetch(url.toString(), {
-    headers: { Accept: 'application/json, text/plain, */*' },
-    credentials: 'omit',
-  })
+const fetchJsonWithProxiesFirst = async <T>(url: URL): Promise<T> => {
+  const response = await fetchWithProxies(url)
 
   if (!response.ok) {
     throw new Error(`요청 실패 (status: ${response.status})`)
@@ -121,8 +118,8 @@ const fetchUsdKrwFromExchangeRateHost = async (): Promise<PriceInfo | null> => {
 
   try {
     const [latestData, previousData] = await Promise.all([
-      fetchJsonDirect<ExchangeRateHostResponse>(latestUrl),
-      fetchJsonDirect<ExchangeRateHostResponse>(previousUrl),
+      fetchJsonWithProxiesFirst<ExchangeRateHostResponse>(latestUrl),
+      fetchJsonWithProxiesFirst<ExchangeRateHostResponse>(previousUrl),
     ])
 
     const latestRate = parseNumericValue(latestData?.rates?.KRW)
@@ -161,7 +158,7 @@ const fetchUsdKrwFromFawazDataset = async (): Promise<PriceInfo | null> => {
   let latestPayload: FawazCurrencyResponse
 
   try {
-    latestPayload = await fetchJsonDirect<FawazCurrencyResponse>(latestUrl)
+    latestPayload = await fetchJsonWithProxiesFirst<FawazCurrencyResponse>(latestUrl)
   } catch (error) {
     console.error('오픈 소스 환율 데이터셋 조회 실패', error)
     return null
@@ -185,7 +182,7 @@ const fetchUsdKrwFromFawazDataset = async (): Promise<PriceInfo | null> => {
         const previousUrl = new URL(
           `https://cdn.jsdelivr.net/gh/fawazahmed0/currency-api@1/${previousIso}/currencies/usd/krw.json`
         )
-        const previousPayload = await fetchJsonDirect<FawazCurrencyResponse>(previousUrl)
+        const previousPayload = await fetchJsonWithProxiesFirst<FawazCurrencyResponse>(previousUrl)
         previousRate = parseNumericValue(previousPayload?.krw)
       } catch (error) {
         console.warn('환율 보조 데이터셋 전일 정보 조회 실패', error)
@@ -255,6 +252,19 @@ const fetchStooqQuotes = async (symbols: string[]): Promise<Record<string, Price
   })
 
   return mapped
+}
+
+const stooqWtiSymbol = 'cl.f' as const
+
+const fetchWtiFromStooq = async (): Promise<PriceInfo | null> => {
+  try {
+    const quotes = await fetchStooqQuotes([stooqWtiSymbol])
+    return quotes[stooqWtiSymbol] ?? null
+  } catch (error) {
+    console.error('Stooq 국제 유가 데이터 조회 실패', error)
+  }
+
+  return null
 }
 
 const fetchBinanceQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {
@@ -436,6 +446,7 @@ export {
   fetchFmpQuotes,
   fetchGateIoQuotes,
   fetchStooqQuotes,
+  fetchWtiFromStooq,
   fetchUsdKrwFromExchangeRateHost,
   fetchYahooQuotes,
   parseNumericValue,
