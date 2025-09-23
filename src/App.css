@@ -99,13 +99,20 @@
 
 .exchange-rate-ticker {
   flex: 0 1 auto;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
   padding: 0;
   color: rgba(226, 232, 240, 0.8);
   font-size: 0.85rem;
   line-height: 1.2;
+}
+
+.exchange-rate-row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
 }
 
 .exchange-rate-title {
