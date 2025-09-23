@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { fetchWithProxies } from '../utils/proxyFetch'
 import TradingViewChart from './TradingViewChart'
 
 type PriceProvider = 'yahoo' | 'binance' | 'gateio'
@@ -19,43 +20,6 @@ type AssetConfig = {
 type PriceInfo = {
   price: number | null
   changePercent: number | null
-}
-
-const disabledProxyValues = new Set(['0', 'false', 'off', 'none', 'no', 'direct'])
-
-const resolveProxyBase = () => {
-  const raw = import.meta.env.VITE_MARKET_DATA_PROXY
-  const trimmed = typeof raw === 'string' ? raw.trim() : ''
-
-  if (trimmed && disabledProxyValues.has(trimmed.toLowerCase())) {
-    return null
-  }
-
-  const base = trimmed || 'https://cors.isomorphic-git.org/'
-  return base.replace(/\/?$/, '/')
-}
-
-const proxyBase = resolveProxyBase()
-
-const toProxiedUrl = (url: URL) => {
-  if (!proxyBase) {
-    return url.toString()
-  }
-
-  return `${proxyBase}${url.toString()}`
-}
-
-const fetchWithProxy = (url: URL, init?: RequestInit) => {
-  const finalInit: RequestInit = { ...init }
-  const headers = new Headers(init?.headers ?? {})
-
-  if (!headers.has('Accept')) {
-    headers.set('Accept', 'application/json')
-  }
-
-  finalInit.headers = headers
-
-  return fetch(toProxiedUrl(url), finalInit)
 }
 
 const assets: AssetConfig[] = [
@@ -373,7 +337,7 @@ const fetchYahooQuotes = async (symbols: string[]): Promise<Record<string, Price
   const url = new URL('https://query1.finance.yahoo.com/v7/finance/quote')
   url.searchParams.set('symbols', symbols.join(','))
 
-  const response = await fetchWithProxy(url)
+  const response = await fetchWithProxies(url)
   if (!response.ok) {
     throw new Error('Yahoo Finance 응답 오류')
   }
@@ -404,7 +368,7 @@ const fetchBinanceQuotes = async (symbols: string[]): Promise<Record<string, Pri
   const url = new URL('https://api.binance.com/api/v3/ticker/24hr')
   url.searchParams.set('symbols', JSON.stringify(symbols))
 
-  const response = await fetchWithProxy(url)
+  const response = await fetchWithProxies(url)
   if (!response.ok) {
     throw new Error('Binance 응답 오류')
   }
@@ -435,7 +399,7 @@ const fetchGateIoQuotes = async (symbols: string[]): Promise<Record<string, Pric
       const url = new URL('https://api.gateio.ws/api/v4/futures/usdt/tickers')
       url.searchParams.set('contract', symbol)
 
-      const response = await fetchWithProxy(url)
+      const response = await fetchWithProxies(url)
       if (!response.ok) {
         throw new Error('Gate.io 응답 오류')
       }
