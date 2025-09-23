@@ -26,6 +26,14 @@ const createProviderMessageState = (initial: string | null = null) =>
     string | null
   >
 
+const providerDisplayNames: Record<PriceProvider, string> = {
+  yahoo: 'Yahoo Finance',
+  binance: 'Binance',
+  gateio: 'Gate.io',
+  fmp: 'Financial Modeling Prep',
+  stooq: 'Stooq',
+}
+
 type PriceSource = {
   provider: PriceProvider
   symbol: string
@@ -49,8 +57,8 @@ const assets: AssetConfig[] = [
     chartSymbol: 'NASDAQ:IXIC',
     priceSources: [
       { provider: 'yahoo', symbol: '^IXIC' },
-      { provider: 'fmp', symbol: '^IXIC' },
       { provider: 'stooq', symbol: '^IXIC' },
+      { provider: 'fmp', symbol: '^IXIC' },
     ],
     formatOptions: { maximumFractionDigits: 2 },
     tags: ['미 증시', '인덱스'],
@@ -62,8 +70,8 @@ const assets: AssetConfig[] = [
     chartSymbol: 'DJI',
     priceSources: [
       { provider: 'yahoo', symbol: '^DJI' },
-      { provider: 'fmp', symbol: '^DJI' },
       { provider: 'stooq', symbol: '^DJI' },
+      { provider: 'fmp', symbol: '^DJI' },
     ],
     formatOptions: { maximumFractionDigits: 2 },
     tags: ['미 증시', '인덱스'],
@@ -105,6 +113,9 @@ const assets: AssetConfig[] = [
   },
 ]
 
+const createAssetProviderState = () =>
+  Object.fromEntries(assets.map((asset) => [asset.id, null])) as Record<string, PriceProvider | null>
+
 const baseFormatOptions: Intl.NumberFormatOptions = {
   minimumFractionDigits: 0,
   maximumFractionDigits: 2,
@@ -115,6 +126,7 @@ const MarketOverview = () => {
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
   const [providerStatuses, setProviderStatuses] = useState(() => createProviderStatusState('loading'))
   const [providerMessages, setProviderMessages] = useState(() => createProviderMessageState())
+  const [assetProviders, setAssetProviders] = useState(() => createAssetProviderState())
 
   const fmpApiKey = import.meta.env.VITE_FMP_KEY?.trim() ?? ''
 
@@ -156,6 +168,7 @@ const MarketOverview = () => {
         provider: PriceProvider
         promise: Promise<Record<string, PriceInfo>>
       }> = []
+      const disabledProviders: PriceProvider[] = []
       if (yahooSymbols.length) {
         tasks.push({ provider: 'yahoo', promise: fetchYahooQuotes(yahooSymbols) })
       }
@@ -165,11 +178,15 @@ const MarketOverview = () => {
       if (gateIoSymbols.length) {
         tasks.push({ provider: 'gateio', promise: fetchGateIoQuotes(gateIoSymbols) })
       }
-      if (fmpSymbols.length) {
-        tasks.push({ provider: 'fmp', promise: fetchFmpQuotes(fmpSymbols, fmpApiKey) })
-      }
       if (stooqSymbols.length) {
         tasks.push({ provider: 'stooq', promise: fetchStooqQuotes(stooqSymbols) })
+      }
+      if (fmpSymbols.length) {
+        if (fmpApiKey) {
+          tasks.push({ provider: 'fmp', promise: fetchFmpQuotes(fmpSymbols, fmpApiKey) })
+        } else {
+          disabledProviders.push('fmp')
+        }
       }
 
       if (!tasks.length) {
@@ -178,6 +195,7 @@ const MarketOverview = () => {
           setPrices({})
           setProviderStatuses(createProviderStatusState('idle'))
           setProviderMessages(createProviderMessageState())
+          setAssetProviders(createAssetProviderState())
         }
         return
       }
@@ -188,12 +206,18 @@ const MarketOverview = () => {
         tasks.forEach(({ provider }) => {
           next[provider] = 'loading'
         })
+        disabledProviders.forEach((provider) => {
+          next[provider] = 'idle'
+        })
         return next
       })
       setProviderMessages((prev) => {
         const next = { ...prev }
         tasks.forEach(({ provider }) => {
           next[provider] = null
+        })
+        disabledProviders.forEach((provider) => {
+          next[provider] = 'API 키 미설정'
         })
         return next
       })
@@ -208,6 +232,7 @@ const MarketOverview = () => {
         const providerResults: Partial<Record<PriceProvider, Record<string, PriceInfo>>> = {}
         const nextProviderStatuses: Partial<Record<PriceProvider, 'idle' | 'error'>> = {}
         const providerErrorMessages: Partial<Record<PriceProvider, string | null>> = {}
+        const providerSuccessMessages: Partial<Record<PriceProvider, string | null>> = {}
         let hasSuccess = false
 
         settled.forEach((result, index) => {
@@ -215,7 +240,6 @@ const MarketOverview = () => {
           if (result.status === 'fulfilled') {
             providerResults[provider] = result.value
             nextProviderStatuses[provider] = 'idle'
-            providerErrorMessages[provider] = null
             hasSuccess = true
           } else {
             console.error(`Failed to load ${provider} quotes`, result.reason)
@@ -225,28 +249,73 @@ const MarketOverview = () => {
         })
 
         setProviderStatuses((prev) => ({ ...prev, ...nextProviderStatuses }))
-        setProviderMessages((prev) => ({ ...prev, ...providerErrorMessages }))
-        setStatus(hasSuccess ? 'idle' : 'error')
-
-        if (!hasSuccess) {
-          setPrices({})
-          return
-        }
 
         const aggregated: Record<string, PriceInfo> = {}
+        const resolvedProviders = createAssetProviderState()
 
         assets.forEach((asset) => {
+          let fallbackChange: number | null = null
+          let fallbackChangeProvider: PriceProvider | null = null
+
           for (const source of asset.priceSources) {
             const providerMap = providerResults[source.provider]
             const info = providerMap?.[source.symbol]
-            if (info && (info.price !== null || info.changePercent !== null)) {
-              aggregated[asset.id] = info
+            if (!info) {
+              continue
+            }
+
+            const hasPrice = info.price !== null && info.price !== undefined
+            const hasChange = info.changePercent !== null && info.changePercent !== undefined
+
+            if (hasPrice) {
+              const mergedChange = hasChange ? info.changePercent : fallbackChange
+              aggregated[asset.id] = {
+                price: info.price,
+                changePercent: mergedChange ?? null,
+              }
+              resolvedProviders[asset.id] = source.provider
+              providerSuccessMessages[source.provider] = `${providerDisplayNames[source.provider]} 데이터 수신`
               break
+            }
+
+            if (hasChange && fallbackChange === null) {
+              fallbackChange = info.changePercent
+              fallbackChangeProvider = source.provider
+            }
+          }
+
+          if (!(asset.id in aggregated) && fallbackChange !== null) {
+            aggregated[asset.id] = { price: null, changePercent: fallbackChange }
+            if (fallbackChangeProvider) {
+              resolvedProviders[asset.id] = fallbackChangeProvider
+              providerSuccessMessages[fallbackChangeProvider] = `${providerDisplayNames[fallbackChangeProvider]} 데이터 수신`
             }
           }
         })
 
         setPrices(aggregated)
+        setAssetProviders(resolvedProviders)
+        setProviderMessages((prev) => {
+          const next = { ...prev }
+          tasks.forEach(({ provider }) => {
+            if (providerErrorMessages[provider] !== undefined) {
+              next[provider] = providerErrorMessages[provider]
+            } else if (providerSuccessMessages[provider] !== undefined) {
+              next[provider] = providerSuccessMessages[provider]
+            } else {
+              next[provider] = null
+            }
+          })
+          disabledProviders.forEach((provider) => {
+            next[provider] = 'API 키 미설정'
+          })
+          return next
+        })
+        setStatus(hasSuccess ? 'idle' : 'error')
+
+        if (!hasSuccess) {
+          return
+        }
       } catch (error) {
         console.error(error)
         if (!active) {
@@ -266,9 +335,13 @@ const MarketOverview = () => {
           tasks.forEach(({ provider }) => {
             next[provider] = '수신 실패'
           })
+          disabledProviders.forEach((provider) => {
+            next[provider] = 'API 키 미설정'
+          })
           return next
         })
         setPrices({})
+        setAssetProviders(createAssetProviderState())
       }
     }
 
@@ -339,12 +412,18 @@ const MarketOverview = () => {
           const price = prices[asset.id]?.price ?? null
           const changePercent = prices[asset.id]?.changePercent ?? null
           const changeLabel = formatChange(changePercent)
-          const fallbackProvider = asset.priceSources[0]?.provider
+          const resolvedProvider = assetProviders[asset.id]
+          const fallbackProvider = resolvedProvider ?? asset.priceSources[0]?.provider
           const fallbackLabel = getFallbackLabel(fallbackProvider)
           const summaryPriceLabel =
             price !== null ? formatPrice(price, asset.formatOptions) : fallbackLabel
-          const summaryChangeLabel =
-            changeLabel ?? (price !== null ? '데이터 없음' : fallbackLabel)
+          const summaryChangeLabel = changeLabel
+            ? changeLabel
+            : price !== null
+              ? resolvedProvider && fallbackLabel !== '데이터 없음'
+                ? fallbackLabel
+                : '데이터 없음'
+              : fallbackLabel
           const summaryState =
             changePercent === null ? 'neutral' : changePercent >= 0 ? 'up' : 'down'
 
@@ -365,10 +444,17 @@ const MarketOverview = () => {
           const price = prices[asset.id]?.price ?? null
           const changePercent = prices[asset.id]?.changePercent ?? null
           const changeLabel = formatChange(changePercent)
-          const fallbackProvider = asset.priceSources[0]?.provider
+          const resolvedProvider = assetProviders[asset.id]
+          const fallbackProvider = resolvedProvider ?? asset.priceSources[0]?.provider
           const fallbackLabel = getFallbackLabel(fallbackProvider)
           const changeClass = changePercent !== null ? (changePercent >= 0 ? 'change up' : 'change down') : 'change'
-          const fallbackChangeLabel = changeLabel ?? (price !== null ? '데이터 없음' : fallbackLabel)
+          const fallbackChangeLabel = changeLabel
+            ? changeLabel
+            : price !== null
+              ? resolvedProvider && fallbackLabel !== '데이터 없음'
+                ? fallbackLabel
+                : '데이터 없음'
+              : fallbackLabel
 
           return (
             <article className="chart-card" key={asset.id}>
