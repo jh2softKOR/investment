@@ -8,7 +8,7 @@ function App() {
     <div className="app">
       <div className="app-inner">
         <header className="hero">
-          <h1>JH 투자 촉진위원회</h1>
+          <h1>JH Investment Lab</h1>
           <p>
             개인 투자자에게 꼭 필요한 달러 경제 지표, 글로벌 증시 및 코인 시세, 그리고 실시간 경제 뉴스를 한눈에
             확인하세요.
@@ -28,8 +28,8 @@ function App() {
         </main>
 
         <footer className="footer">
-          © {new Date().getFullYear()} JH 투자 촉진위원회 · 데이터 출처: Investing.com, Binance, Yahoo Finance,
-          AlphaVantage
+          © {new Date().getFullYear()} JH Investment Lab · 데이터 출처: Investing.com, Binance, Financial Modeling
+          Prep, AlphaVantage
         </footer>
       </div>
     </div>

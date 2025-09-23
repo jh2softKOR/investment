@@ -119,6 +119,9 @@ export const fetchWithProxies = async (url: URL, init?: RequestInit) => {
   }
 
   finalInit.headers = headers
+  if (!finalInit.credentials) {
+    finalInit.credentials = 'omit'
+  }
 
   let lastError: unknown = null
 
