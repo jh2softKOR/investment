@@ -266,7 +266,7 @@ const NewsFeed = () => {
         </div>
       ) : news.length > 0 ? (
         <div className="news-grid">
-          {news.slice(0, 9).map((item) => (
+          {news.slice(0, 8).map((item) => (
             <article className="news-card" key={item.id}>
               <h3>{item.title}</h3>
               {item.summary && <p>{item.summary}</p>}

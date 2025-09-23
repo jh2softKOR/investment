@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchWithProxies } from '../utils/proxyFetch'
+import FearGreedIndex from './FearGreedIndex'
 import TradingViewChart from './TradingViewChart'
 
 const priceProviders = ['yahoo', 'binance', 'gateio', 'fmp'] as const
@@ -41,7 +42,7 @@ const assets: AssetConfig[] = [
     title: '나스닥 종합지수',
     subtitle: '미국 기술주의 흐름을 가늠하는 대표 지수',
     chartSymbol: 'NASDAQ:IXIC',
-    priceSource: { provider: 'fmp', symbol: '^IXIC' },
+    priceSource: { provider: 'yahoo', symbol: '^IXIC' },
     formatOptions: { maximumFractionDigits: 2 },
     tags: ['미 증시', '인덱스'],
   },
@@ -50,7 +51,7 @@ const assets: AssetConfig[] = [
     title: '다우존스 산업평균',
     subtitle: '전통 우량주 중심의 벤치마크 지수',
     chartSymbol: 'DJI',
-    priceSource: { provider: 'fmp', symbol: '^DJI' },
+    priceSource: { provider: 'yahoo', symbol: '^DJI' },
     formatOptions: { maximumFractionDigits: 2 },
     tags: ['미 증시', '인덱스'],
   },
@@ -347,28 +348,31 @@ const MarketOverview = () => {
         </div>
       </div>
 
-      <div className="market-summary" aria-live="polite">
-        {assets.map((asset) => {
-          const price = prices[asset.id]?.price ?? null
-          const changePercent = prices[asset.id]?.changePercent ?? null
-          const changeLabel = formatChange(changePercent)
-          const fallbackLabel = getFallbackLabel(asset.priceSource?.provider)
-          const summaryPriceLabel =
-            price !== null ? formatPrice(price, asset.formatOptions) : fallbackLabel
-          const summaryChangeLabel = changeLabel ?? fallbackLabel
-          const summaryState =
-            changePercent === null ? 'neutral' : changePercent >= 0 ? 'up' : 'down'
+      <div className="market-top-row">
+        <div className="market-summary" aria-live="polite">
+          {assets.map((asset) => {
+            const price = prices[asset.id]?.price ?? null
+            const changePercent = prices[asset.id]?.changePercent ?? null
+            const changeLabel = formatChange(changePercent)
+            const fallbackLabel = getFallbackLabel(asset.priceSource?.provider)
+            const summaryPriceLabel =
+              price !== null ? formatPrice(price, asset.formatOptions) : fallbackLabel
+            const summaryChangeLabel = changeLabel ?? fallbackLabel
+            const summaryState =
+              changePercent === null ? 'neutral' : changePercent >= 0 ? 'up' : 'down'
 
-          return (
-            <div className={`market-summary-item ${summaryState}`} key={asset.id}>
-              <span className="market-summary-name">{asset.title}</span>
-              <div className="market-summary-metrics">
-                <span className="market-summary-price">{summaryPriceLabel}</span>
-                <span className="market-summary-change">{summaryChangeLabel}</span>
+            return (
+              <div className={`market-summary-item ${summaryState}`} key={asset.id}>
+                <span className="market-summary-name">{asset.title}</span>
+                <div className="market-summary-metrics">
+                  <span className="market-summary-price">{summaryPriceLabel}</span>
+                  <span className="market-summary-change">{summaryChangeLabel}</span>
+                </div>
               </div>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
+        <FearGreedIndex />
       </div>
 
       <div className="chart-grid">
