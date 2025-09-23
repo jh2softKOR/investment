@@ -6,11 +6,12 @@ import {
   fetchBinanceQuotes,
   fetchFmpQuotes,
   fetchGateIoQuotes,
+  fetchStooqQuotes,
   fetchYahooQuotes,
 } from '../utils/marketData'
 import type { PriceInfo } from '../utils/marketData'
 
-const priceProviders = ['yahoo', 'binance', 'gateio', 'fmp'] as const
+const priceProviders = ['yahoo', 'binance', 'gateio', 'fmp', 'stooq'] as const
 type PriceProvider = (typeof priceProviders)[number]
 
 const createProviderStatusState = (initial: 'idle' | 'loading' | 'error' = 'loading') =>
@@ -49,6 +50,7 @@ const assets: AssetConfig[] = [
     priceSources: [
       { provider: 'yahoo', symbol: '^IXIC' },
       { provider: 'fmp', symbol: '^IXIC' },
+      { provider: 'stooq', symbol: '^IXIC' },
     ],
     formatOptions: { maximumFractionDigits: 2 },
     tags: ['미 증시', '인덱스'],
@@ -61,6 +63,7 @@ const assets: AssetConfig[] = [
     priceSources: [
       { provider: 'yahoo', symbol: '^DJI' },
       { provider: 'fmp', symbol: '^DJI' },
+      { provider: 'stooq', symbol: '^DJI' },
     ],
     formatOptions: { maximumFractionDigits: 2 },
     tags: ['미 증시', '인덱스'],
@@ -121,6 +124,7 @@ const MarketOverview = () => {
       binance: new Set<string>(),
       gateio: new Set<string>(),
       fmp: new Set<string>(),
+      stooq: new Set<string>(),
     }
 
     assets.forEach((asset) => {
@@ -134,6 +138,7 @@ const MarketOverview = () => {
       binance: Array.from(symbolSets.binance),
       gateio: Array.from(symbolSets.gateio),
       fmp: Array.from(symbolSets.fmp),
+      stooq: Array.from(symbolSets.stooq),
     }
   }, [])
 
@@ -141,6 +146,7 @@ const MarketOverview = () => {
   const binanceSymbols = providerSymbols.binance
   const gateIoSymbols = providerSymbols.gateio
   const fmpSymbols = providerSymbols.fmp
+  const stooqSymbols = providerSymbols.stooq
 
   useEffect(() => {
     let active = true
@@ -167,6 +173,9 @@ const MarketOverview = () => {
         } else {
           missingProviders.push('fmp')
         }
+      }
+      if (stooqSymbols.length) {
+        tasks.push({ provider: 'stooq', promise: fetchStooqQuotes(stooqSymbols) })
       }
 
       if (!tasks.length) {
@@ -291,7 +300,7 @@ const MarketOverview = () => {
       active = false
       window.clearInterval(interval)
     }
-  }, [binanceSymbols, fmpApiKey, fmpSymbols, gateIoSymbols, yahooSymbols])
+  }, [binanceSymbols, fmpApiKey, fmpSymbols, gateIoSymbols, stooqSymbols, yahooSymbols])
 
   const formatPrice = (value: number | null, options?: Intl.NumberFormatOptions) => {
     if (value === null || value === undefined) {

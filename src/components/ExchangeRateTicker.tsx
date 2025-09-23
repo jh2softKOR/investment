@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchYahooQuotes } from '../utils/marketData'
+import { fetchUsdKrwFromExchangeRateHost, fetchYahooQuotes } from '../utils/marketData'
 import type { PriceInfo } from '../utils/marketData'
 
 const usdKrwSymbol = 'KRW=X' as const
@@ -43,6 +43,14 @@ const ExchangeRateTicker = () => {
         setStatus('loading')
       }
 
+      const resolveStatus = (info: PriceInfo | null) => {
+        if (!info) {
+          return 'error'
+        }
+
+        return info.price !== null || info.changePercent !== null ? 'idle' : 'error'
+      }
+
       try {
         const quotes = await fetchYahooQuotes([usdKrwSymbol])
         if (!active) {
@@ -50,9 +58,26 @@ const ExchangeRateTicker = () => {
         }
 
         const info = quotes[usdKrwSymbol] ?? null
-        const hasValue = info && (info.price !== null || info.changePercent !== null)
-        setRate(info)
-        setStatus(hasValue ? 'idle' : 'error')
+        if (info && (info.price !== null || info.changePercent !== null)) {
+          setRate(info)
+          setStatus('idle')
+          return
+        }
+      } catch (error) {
+        console.warn('Yahoo 환율 기본 소스 로딩 실패, 대체 소스를 시도합니다.', error)
+      }
+
+      try {
+        const fallbackInfo = await fetchUsdKrwFromExchangeRateHost()
+        if (!active) {
+          return
+        }
+
+        setRate(fallbackInfo)
+        setStatus(resolveStatus(fallbackInfo))
+        if (!fallbackInfo) {
+          throw new Error('대체 환율 정보가 비어 있습니다.')
+        }
       } catch (error) {
         console.error('원/달러 환율 로딩 실패', error)
         if (!active) {
@@ -90,19 +115,17 @@ const ExchangeRateTicker = () => {
 
   return (
     <div className="exchange-rate-ticker" aria-live="polite" data-state={status}>
-      <div className="exchange-rate-header">
-        <span className="exchange-rate-title">원/달러 환율</span>
-        <span className="exchange-rate-subtitle">KRW=X · 실시간</span>
-      </div>
-      <div className="exchange-rate-body">
-        <strong className="exchange-rate-value">{resolvedPriceLabel}</strong>
-        {changeLabel ? (
-          <span className={changeClass}>{changeLabel}</span>
-        ) : (
-          <span className={changeClass}>{fallbackChangeLabel}</span>
-        )}
-      </div>
-      <span className="exchange-rate-meta">야후 파이낸스 · 1분 간격 자동 갱신</span>
+      <span className="exchange-rate-title">원/달러 환율</span>
+      <span aria-hidden="true" className="exchange-rate-separator">
+        ·
+      </span>
+      <span className="exchange-rate-value">{resolvedPriceLabel}</span>
+      {changeLabel ? (
+        <span className={changeClass}>{changeLabel}</span>
+      ) : (
+        <span className={changeClass}>{fallbackChangeLabel}</span>
+      )}
+      <span className="visually-hidden">KRW=X · 1분 간격 자동 갱신</span>
     </div>
   )
 }
