@@ -28,39 +28,165 @@ const parseNumericValue = (value: unknown): number | null => {
   return null
 }
 
+const yahooQuoteEndpoints = [
+  'https://query2.finance.yahoo.com/v7/finance/quote',
+  'https://query1.finance.yahoo.com/v7/finance/quote',
+]
+
 const fetchYahooQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {
   if (!symbols.length) {
     return {}
   }
 
-  const url = new URL('https://query1.finance.yahoo.com/v7/finance/quote')
-  url.searchParams.set('symbols', symbols.join(','))
+  let lastError: unknown = null
 
-  const response = await fetchWithProxies(url)
-  if (!response.ok) {
-    throw new Error('Yahoo Finance 응답 오류')
+  for (let index = 0; index < yahooQuoteEndpoints.length; index += 1) {
+    const endpoint = yahooQuoteEndpoints[index]
+    const url = new URL(endpoint)
+    url.searchParams.set('symbols', symbols.join(','))
+
+    try {
+      const response = await fetchWithProxies(url)
+      if (!response.ok) {
+        throw new Error(`Yahoo Finance 응답 오류 (status: ${response.status})`)
+      }
+
+      const data = await response.json()
+      const results = (data?.quoteResponse?.result ?? []) as Array<{
+        symbol?: string
+        regularMarketPrice?: number | string | null
+        regularMarketChangePercent?: number | string | null
+      }>
+
+      if (!results.length) {
+        lastError = new Error('Yahoo Finance 응답에 유효한 결과가 없습니다.')
+        continue
+      }
+
+      const mapped: Record<string, PriceInfo> = {}
+      results.forEach((item) => {
+        if (!item.symbol) {
+          return
+        }
+
+        const price = parseNumericValue(item.regularMarketPrice)
+        const changePercent = parseNumericValue(item.regularMarketChangePercent)
+
+        mapped[item.symbol] = {
+          price,
+          changePercent,
+        }
+      })
+
+      return mapped
+    } catch (error) {
+      lastError = error
+    }
   }
 
-  const data = await response.json()
-  const results = (data?.quoteResponse?.result ?? []) as Array<{
-    symbol?: string
-    regularMarketPrice?: number | string | null
-    regularMarketChangePercent?: number | string | null
-  }>
+  if (lastError instanceof Error) {
+    throw lastError
+  }
+
+  throw new Error('Yahoo Finance 시세를 불러오지 못했습니다.')
+}
+
+type ExchangeRateHostResponse = {
+  success?: boolean
+  rates?: Record<string, number | string | null>
+  base?: string
+}
+
+const fetchUsdKrwFromExchangeRateHost = async (): Promise<PriceInfo | null> => {
+  const latestUrl = new URL('https://api.exchangerate.host/latest')
+  latestUrl.searchParams.set('base', 'USD')
+  latestUrl.searchParams.set('symbols', 'KRW')
+
+  const previousUrl = new URL('https://api.exchangerate.host/yesterday')
+  previousUrl.searchParams.set('base', 'USD')
+  previousUrl.searchParams.set('symbols', 'KRW')
+
+  const [latestResponse, previousResponse] = await Promise.all([
+    fetchWithProxies(latestUrl),
+    fetchWithProxies(previousUrl),
+  ])
+
+  if (!latestResponse.ok) {
+    throw new Error('ExchangeRate.host 최신 환율 응답 오류')
+  }
+  if (!previousResponse.ok) {
+    throw new Error('ExchangeRate.host 전일 환율 응답 오류')
+  }
+
+  const latestData = (await latestResponse.json()) as ExchangeRateHostResponse
+  const previousData = (await previousResponse.json()) as ExchangeRateHostResponse
+
+  const latestRate = parseNumericValue(latestData?.rates?.KRW)
+  const previousRate = parseNumericValue(previousData?.rates?.KRW)
+
+  if (latestRate === null && previousRate === null) {
+    return null
+  }
+
+  let changePercent: number | null = null
+  if (latestRate !== null && previousRate !== null && previousRate !== 0) {
+    changePercent = ((latestRate - previousRate) / previousRate) * 100
+  }
+
+  return {
+    price: latestRate,
+    changePercent,
+  }
+}
+
+const fetchStooqQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {
+  if (!symbols.length) {
+    return {}
+  }
+
+  const results = await Promise.all(
+    symbols.map(async (symbol) => {
+      const url = new URL('https://stooq.com/q/l/')
+      url.searchParams.set('s', symbol)
+      url.searchParams.set('f', 'sd2t2ohlcv')
+      url.searchParams.set('h', '1')
+      url.searchParams.set('e', 'csv')
+
+      const response = await fetchWithProxies(url)
+      if (!response.ok) {
+        throw new Error(`Stooq ${symbol} 시세 응답 오류`)
+      }
+
+      const text = await response.text()
+      const lines = text.trim().split(/\r?\n/)
+      if (lines.length < 2) {
+        return null
+      }
+
+      const dataLine = lines[1]
+      const columns = dataLine.split(',')
+      if (columns.length < 7) {
+        return null
+      }
+
+      const closeValue = parseNumericValue(columns[6])
+
+      return {
+        symbol,
+        info: {
+          price: closeValue,
+          changePercent: null,
+        },
+      }
+    })
+  )
 
   const mapped: Record<string, PriceInfo> = {}
-  results.forEach((item) => {
-    if (!item.symbol) {
+  results.forEach((entry) => {
+    if (!entry || !entry.symbol) {
       return
     }
-
-    const price = parseNumericValue(item.regularMarketPrice)
-    const changePercent = parseNumericValue(item.regularMarketChangePercent)
-
-    mapped[item.symbol] = {
-      price,
-      changePercent,
-    }
+    mapped[entry.symbol] = entry.info
   })
 
   return mapped
@@ -225,4 +351,12 @@ const fetchFmpQuotes = async (
 }
 
 export type { PriceInfo }
-export { fetchBinanceQuotes, fetchFmpQuotes, fetchGateIoQuotes, fetchYahooQuotes, parseNumericValue }
+export {
+  fetchBinanceQuotes,
+  fetchFmpQuotes,
+  fetchGateIoQuotes,
+  fetchStooqQuotes,
+  fetchUsdKrwFromExchangeRateHost,
+  fetchYahooQuotes,
+  parseNumericValue,
+}
