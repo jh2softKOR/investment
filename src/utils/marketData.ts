@@ -97,6 +97,19 @@ type ExchangeRateHostResponse = {
   base?: string
 }
 
+const fetchJsonDirect = async <T>(url: URL): Promise<T> => {
+  const response = await fetch(url.toString(), {
+    headers: { Accept: 'application/json, text/plain, */*' },
+    credentials: 'omit',
+  })
+
+  if (!response.ok) {
+    throw new Error(`요청 실패 (status: ${response.status})`)
+  }
+
+  return (await response.json()) as T
+}
+
 const fetchUsdKrwFromExchangeRateHost = async (): Promise<PriceInfo | null> => {
   const latestUrl = new URL('https://api.exchangerate.host/latest')
   latestUrl.searchParams.set('base', 'USD')
@@ -106,30 +119,82 @@ const fetchUsdKrwFromExchangeRateHost = async (): Promise<PriceInfo | null> => {
   previousUrl.searchParams.set('base', 'USD')
   previousUrl.searchParams.set('symbols', 'KRW')
 
-  const [latestResponse, previousResponse] = await Promise.all([
-    fetchWithProxies(latestUrl),
-    fetchWithProxies(previousUrl),
-  ])
+  try {
+    const [latestData, previousData] = await Promise.all([
+      fetchJsonDirect<ExchangeRateHostResponse>(latestUrl),
+      fetchJsonDirect<ExchangeRateHostResponse>(previousUrl),
+    ])
 
-  if (!latestResponse.ok) {
-    throw new Error('ExchangeRate.host 최신 환율 응답 오류')
+    const latestRate = parseNumericValue(latestData?.rates?.KRW)
+    const previousRate = parseNumericValue(previousData?.rates?.KRW)
+
+    if (latestRate === null && previousRate === null) {
+      return null
+    }
+
+    let changePercent: number | null = null
+    if (latestRate !== null && previousRate !== null && previousRate !== 0) {
+      changePercent = ((latestRate - previousRate) / previousRate) * 100
+    }
+
+    return {
+      price: latestRate,
+      changePercent,
+    }
+  } catch (error) {
+    console.warn('ExchangeRate.host 환율 로딩 실패, 오픈 소스 환율 데이터셋을 시도합니다.', error)
   }
-  if (!previousResponse.ok) {
-    throw new Error('ExchangeRate.host 전일 환율 응답 오류')
+
+  return fetchUsdKrwFromFawazDataset()
+}
+
+type FawazCurrencyResponse = {
+  date?: string
+  krw?: number | string | null
+}
+
+const fetchUsdKrwFromFawazDataset = async (): Promise<PriceInfo | null> => {
+  const latestUrl = new URL(
+    'https://cdn.jsdelivr.net/gh/fawazahmed0/currency-api@1/latest/currencies/usd/krw.json'
+  )
+
+  let latestPayload: FawazCurrencyResponse
+
+  try {
+    latestPayload = await fetchJsonDirect<FawazCurrencyResponse>(latestUrl)
+  } catch (error) {
+    console.error('오픈 소스 환율 데이터셋 조회 실패', error)
+    return null
   }
+  const latestRate = parseNumericValue(latestPayload?.krw)
 
-  const latestData = (await latestResponse.json()) as ExchangeRateHostResponse
-  const previousData = (await previousResponse.json()) as ExchangeRateHostResponse
-
-  const latestRate = parseNumericValue(latestData?.rates?.KRW)
-  const previousRate = parseNumericValue(previousData?.rates?.KRW)
-
-  if (latestRate === null && previousRate === null) {
+  if (latestRate === null) {
     return null
   }
 
+  let previousRate: number | null = null
+  const latestDateValue = latestPayload?.date
+
+  if (latestDateValue) {
+    const parsed = new Date(latestDateValue)
+    if (!Number.isNaN(parsed.getTime())) {
+      parsed.setDate(parsed.getDate() - 1)
+      const previousIso = parsed.toISOString().slice(0, 10)
+
+      try {
+        const previousUrl = new URL(
+          `https://cdn.jsdelivr.net/gh/fawazahmed0/currency-api@1/${previousIso}/currencies/usd/krw.json`
+        )
+        const previousPayload = await fetchJsonDirect<FawazCurrencyResponse>(previousUrl)
+        previousRate = parseNumericValue(previousPayload?.krw)
+      } catch (error) {
+        console.warn('환율 보조 데이터셋 전일 정보 조회 실패', error)
+      }
+    }
+  }
+
   let changePercent: number | null = null
-  if (latestRate !== null && previousRate !== null && previousRate !== 0) {
+  if (previousRate !== null && previousRate !== 0) {
     changePercent = ((latestRate - previousRate) / previousRate) * 100
   }
 
@@ -312,20 +377,35 @@ const fetchGateIoQuotes = async (symbols: string[]): Promise<Record<string, Pric
 
 const fetchFmpQuotes = async (
   symbols: string[],
-  apiKey: string
+  apiKey?: string
 ): Promise<Record<string, PriceInfo>> => {
-  if (!symbols.length || !apiKey) {
+  if (!symbols.length) {
     return {}
   }
+
+  const trimmedKey = apiKey?.trim()
+  const resolvedKey = trimmedKey && trimmedKey.length > 0 ? trimmedKey : 'demo'
 
   const encodedSymbols = symbols.map((symbol) => encodeURIComponent(symbol))
   const url = new URL(
     `https://financialmodelingprep.com/api/v3/quote/${encodedSymbols.join(',')}`
   )
-  url.searchParams.set('apikey', apiKey)
+  url.searchParams.set('apikey', resolvedKey)
 
-  const response = await fetchWithProxies(url)
+  const response = await fetch(url.toString(), {
+    headers: { Accept: 'application/json, text/plain, */*' },
+    credentials: 'omit',
+  })
+
   if (!response.ok) {
+    if (!trimmedKey) {
+      console.warn(
+        `Financial Modeling Prep 공개 키(demo) 요청 실패 (status: ${response.status}). ` +
+          '환경 변수 VITE_FMP_KEY에 유효한 API 키를 설정하면 더 안정적으로 데이터를 수신할 수 있습니다.'
+      )
+      return {}
+    }
+
     throw new Error('Financial Modeling Prep 시세 응답 오류')
   }
 

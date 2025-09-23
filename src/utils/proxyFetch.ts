@@ -1,8 +1,11 @@
 const disabledProxyValues = new Set(['0', 'false', 'off', 'none', 'no', 'direct'])
 
+type StrategyInit = RequestInit | ((url: URL) => RequestInit | null | undefined)
+
 type ProxyStrategy = {
   id: string
   build: (url: URL) => string
+  init?: StrategyInit
 }
 
 const directStrategy: ProxyStrategy = {
@@ -10,7 +13,11 @@ const directStrategy: ProxyStrategy = {
   build: (url) => url.toString(),
 }
 
-const createStrategyFromTemplate = (template: string, id?: string): ProxyStrategy => {
+const createStrategyFromTemplate = (
+  template: string,
+  id?: string,
+  init?: StrategyInit
+): ProxyStrategy => {
   const trimmed = template.trim()
   const identifier = id ?? `proxy:${trimmed}`
 
@@ -22,6 +29,7 @@ const createStrategyFromTemplate = (template: string, id?: string): ProxyStrateg
     return {
       id: identifier,
       build: (url) => trimmed.replace(/{{encodedUrl}}/g, encodeURIComponent(url.toString())),
+      init,
     }
   }
 
@@ -29,6 +37,7 @@ const createStrategyFromTemplate = (template: string, id?: string): ProxyStrateg
     return {
       id: identifier,
       build: (url) => trimmed.replace(/{{url}}/g, url.toString()),
+      init,
     }
   }
 
@@ -36,6 +45,7 @@ const createStrategyFromTemplate = (template: string, id?: string): ProxyStrateg
     return {
       id: identifier,
       build: (url) => trimmed.replace(/%s/g, url.toString()),
+      init,
     }
   }
 
@@ -43,6 +53,7 @@ const createStrategyFromTemplate = (template: string, id?: string): ProxyStrateg
     return {
       id: identifier,
       build: (url) => `${trimmed}${encodeURIComponent(url.toString())}`,
+      init,
     }
   }
 
@@ -50,6 +61,7 @@ const createStrategyFromTemplate = (template: string, id?: string): ProxyStrateg
   return {
     id: identifier,
     build: (url) => `${normalized}${url.toString()}`,
+    init,
   }
 }
 
@@ -61,10 +73,10 @@ const parseCustomTemplates = (raw: string) =>
 
 const defaultProxyStrategies: ProxyStrategy[] = [
   createStrategyFromTemplate('https://cors.isomorphic-git.org/', 'cors-isomorphic'),
-  createStrategyFromTemplate('https://thingproxy.freeboard.io/fetch/', 'thingproxy'),
-  createStrategyFromTemplate('https://corsproxy.io/?', 'corsproxy-io'),
+  createStrategyFromTemplate('https://proxy.cors.workers.dev/?', 'cors-workers'),
+  createStrategyFromTemplate('https://thingproxy.freeboard.workers.dev/fetch/', 'thingproxy-workers'),
+  createStrategyFromTemplate('https://yacdn.org/proxy/', 'yacdn'),
   createStrategyFromTemplate('https://api.allorigins.win/raw?url=', 'allorigins'),
-  createStrategyFromTemplate('https://r.jina.ai/', 'r-jina'),
 ]
 
 const appendDirectIfMissing = (strategies: ProxyStrategy[]) => {
@@ -108,19 +120,48 @@ const resolveProxyStrategies = (): ProxyStrategy[] => {
 const proxyStrategies = resolveProxyStrategies()
 
 const shouldRetryWithNextProxy = (response: Response) =>
-  [403, 429, 500, 502, 503, 504].includes(response.status)
+  [403, 429, 500, 502, 503, 504, 521, 522, 523, 524].includes(response.status)
+
+const resolveStrategyInit = (strategy: ProxyStrategy, url: URL): RequestInit | undefined => {
+  if (!strategy.init) {
+    return undefined
+  }
+
+  if (typeof strategy.init === 'function') {
+    return strategy.init(url) ?? undefined
+  }
+
+  return strategy.init
+}
+
+const mergeRequestInit = (base: RequestInit, override?: RequestInit): RequestInit => {
+  if (!override) {
+    return { ...base, headers: new Headers(base.headers ?? {}) }
+  }
+
+  const merged: RequestInit = { ...base, ...override }
+  const baseHeaders = new Headers(base.headers ?? {})
+  const overrideHeaders = new Headers(override.headers ?? {})
+
+  overrideHeaders.forEach((value, key) => {
+    baseHeaders.set(key, value)
+  })
+
+  merged.headers = baseHeaders
+  return merged
+}
 
 export const fetchWithProxies = async (url: URL, init?: RequestInit) => {
-  const finalInit: RequestInit = { ...init }
+  const baseInit: RequestInit = { ...init }
   const headers = new Headers(init?.headers ?? {})
 
   if (!headers.has('Accept')) {
     headers.set('Accept', 'application/json, text/plain, */*')
   }
 
-  finalInit.headers = headers
-  if (!finalInit.credentials) {
-    finalInit.credentials = 'omit'
+  baseInit.headers = headers
+  if (!baseInit.credentials) {
+    baseInit.credentials = 'omit'
   }
 
   let lastError: unknown = null
@@ -129,9 +170,11 @@ export const fetchWithProxies = async (url: URL, init?: RequestInit) => {
     const strategy = proxyStrategies[index]
     const targetUrl = strategy.build(url)
     const isLast = index === proxyStrategies.length - 1
+    const strategyInit = resolveStrategyInit(strategy, url)
+    const requestInit = mergeRequestInit(baseInit, strategyInit)
 
     try {
-      const response = await fetch(targetUrl, finalInit)
+      const response = await fetch(targetUrl, requestInit)
 
       if (!response.ok && !isLast && shouldRetryWithNextProxy(response)) {
         lastError = new Error(`Proxy ${strategy.id} responded with status ${response.status}`)

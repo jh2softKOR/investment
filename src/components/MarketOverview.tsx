@@ -156,8 +156,6 @@ const MarketOverview = () => {
         provider: PriceProvider
         promise: Promise<Record<string, PriceInfo>>
       }> = []
-      const missingProviders: PriceProvider[] = []
-
       if (yahooSymbols.length) {
         tasks.push({ provider: 'yahoo', promise: fetchYahooQuotes(yahooSymbols) })
       }
@@ -168,11 +166,7 @@ const MarketOverview = () => {
         tasks.push({ provider: 'gateio', promise: fetchGateIoQuotes(gateIoSymbols) })
       }
       if (fmpSymbols.length) {
-        if (fmpApiKey) {
-          tasks.push({ provider: 'fmp', promise: fetchFmpQuotes(fmpSymbols, fmpApiKey) })
-        } else {
-          missingProviders.push('fmp')
-        }
+        tasks.push({ provider: 'fmp', promise: fetchFmpQuotes(fmpSymbols, fmpApiKey) })
       }
       if (stooqSymbols.length) {
         tasks.push({ provider: 'stooq', promise: fetchStooqQuotes(stooqSymbols) })
@@ -180,19 +174,10 @@ const MarketOverview = () => {
 
       if (!tasks.length) {
         if (active) {
-          setStatus(missingProviders.length ? 'error' : 'idle')
+          setStatus('idle')
           setPrices({})
-          const nextStatuses = createProviderStatusState('idle')
-          missingProviders.forEach((provider) => {
-            nextStatuses[provider] = 'error'
-          })
-          setProviderStatuses(nextStatuses)
-
-          const nextMessages = createProviderMessageState()
-          missingProviders.forEach((provider) => {
-            nextMessages[provider] = 'API 키 필요'
-          })
-          setProviderMessages(nextMessages)
+          setProviderStatuses(createProviderStatusState('idle'))
+          setProviderMessages(createProviderMessageState())
         }
         return
       }
@@ -203,18 +188,12 @@ const MarketOverview = () => {
         tasks.forEach(({ provider }) => {
           next[provider] = 'loading'
         })
-        missingProviders.forEach((provider) => {
-          next[provider] = 'error'
-        })
         return next
       })
       setProviderMessages((prev) => {
         const next = { ...prev }
         tasks.forEach(({ provider }) => {
           next[provider] = null
-        })
-        missingProviders.forEach((provider) => {
-          next[provider] = 'API 키 필요'
         })
         return next
       })

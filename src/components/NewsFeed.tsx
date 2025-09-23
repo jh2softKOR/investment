@@ -67,7 +67,17 @@ const relevantKeywordPatterns: RegExp[] = [
   /altcoin/i,
 ]
 
-const stripHtml = (value: string) => value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+const decodeBasicHtmlEntities = (value: string) =>
+  value
+    .replace(/&nbsp;|&#160;|&#xA0;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+
+const stripHtml = (value: string) =>
+  decodeBasicHtmlEntities(value.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim()
 
 const isRelevantNewsItem = (item: NewsItem) => {
   const haystack = [item.title, item.summary, item.source].filter(Boolean).join(' ')
