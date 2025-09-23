@@ -2,16 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import FearGreedIndex from './FearGreedIndex'
 import YieldSpreadCard from './YieldSpreadCard'
 import TradingViewChart from './TradingViewChart'
-import {
-  fetchBinanceQuotes,
-  fetchFmpQuotes,
-  fetchGateIoQuotes,
-  fetchStooqQuotes,
-  fetchYahooQuotes,
-} from '../utils/marketData'
+import { fetchBinanceQuotes, fetchFmpQuotes, fetchGateIoQuotes, fetchStooqQuotes } from '../utils/marketData'
 import type { PriceInfo } from '../utils/marketData'
 
-const priceProviders = ['yahoo', 'binance', 'gateio', 'fmp', 'stooq'] as const
+const priceProviders = ['stooq', 'binance', 'gateio', 'fmp'] as const
 type PriceProvider = (typeof priceProviders)[number]
 
 const createProviderStatusState = (initial: 'idle' | 'loading' | 'error' = 'loading') =>
@@ -27,11 +21,10 @@ const createProviderMessageState = (initial: string | null = null) =>
   >
 
 const providerDisplayNames: Record<PriceProvider, string> = {
-  yahoo: 'Yahoo Finance',
+  stooq: 'Stooq',
   binance: 'Binance',
   gateio: 'Gate.io',
   fmp: 'Financial Modeling Prep',
-  stooq: 'Stooq',
 }
 
 type PriceSource = {
@@ -56,7 +49,6 @@ const assets: AssetConfig[] = [
     subtitle: '미국 기술주의 흐름을 가늠하는 대표 지수',
     chartSymbol: 'NASDAQ:IXIC',
     priceSources: [
-      { provider: 'yahoo', symbol: '^IXIC' },
       { provider: 'stooq', symbol: '^IXIC' },
       { provider: 'fmp', symbol: '^IXIC' },
     ],
@@ -69,7 +61,6 @@ const assets: AssetConfig[] = [
     subtitle: '전통 우량주 중심의 벤치마크 지수',
     chartSymbol: 'DJI',
     priceSources: [
-      { provider: 'yahoo', symbol: '^DJI' },
       { provider: 'stooq', symbol: '^DJI' },
       { provider: 'fmp', symbol: '^DJI' },
     ],
@@ -131,30 +122,20 @@ const MarketOverview = () => {
   const fmpApiKey = import.meta.env.VITE_FMP_KEY?.trim() ?? ''
 
   const providerSymbols = useMemo(() => {
-    const symbolSets: Record<PriceProvider, Set<string>> = {
-      yahoo: new Set<string>(),
-      binance: new Set<string>(),
-      gateio: new Set<string>(),
-      fmp: new Set<string>(),
-      stooq: new Set<string>(),
-    }
+    const symbolSets = Object.fromEntries(
+      priceProviders.map((provider) => [provider, new Set<string>()])
+    ) as Record<PriceProvider, Set<string>>
 
     assets.forEach((asset) => {
       asset.priceSources.forEach((source) => {
-        symbolSets[source.provider].add(source.symbol)
+        symbolSets[source.provider]?.add(source.symbol)
       })
     })
 
-    return {
-      yahoo: Array.from(symbolSets.yahoo),
-      binance: Array.from(symbolSets.binance),
-      gateio: Array.from(symbolSets.gateio),
-      fmp: Array.from(symbolSets.fmp),
-      stooq: Array.from(symbolSets.stooq),
-    }
+    return Object.fromEntries(
+      priceProviders.map((provider) => [provider, Array.from(symbolSets[provider])])
+    ) as Record<PriceProvider, string[]>
   }, [])
-
-  const yahooSymbols = providerSymbols.yahoo
   const binanceSymbols = providerSymbols.binance
   const gateIoSymbols = providerSymbols.gateio
   const fmpSymbols = providerSymbols.fmp
@@ -169,9 +150,6 @@ const MarketOverview = () => {
         promise: Promise<Record<string, PriceInfo>>
       }> = []
       const disabledProviders: PriceProvider[] = []
-      if (yahooSymbols.length) {
-        tasks.push({ provider: 'yahoo', promise: fetchYahooQuotes(yahooSymbols) })
-      }
       if (binanceSymbols.length) {
         tasks.push({ provider: 'binance', promise: fetchBinanceQuotes(binanceSymbols) })
       }
@@ -352,7 +330,7 @@ const MarketOverview = () => {
       active = false
       window.clearInterval(interval)
     }
-  }, [binanceSymbols, fmpApiKey, fmpSymbols, gateIoSymbols, stooqSymbols, yahooSymbols])
+  }, [binanceSymbols, fmpApiKey, fmpSymbols, gateIoSymbols, stooqSymbols])
 
   const formatPrice = (value: number | null, options?: Intl.NumberFormatOptions) => {
     if (value === null || value === undefined) {
