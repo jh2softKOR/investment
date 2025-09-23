@@ -489,7 +489,17 @@ const EconomicCalendar = () => {
     <section className="section" aria-labelledby="economic-calendar-heading">
       <div className="section-header">
         <div>
-          <h2 id="economic-calendar-heading">USD 주요 경제 지표 캘린더</h2>
+          <h2 id="economic-calendar-heading" className="section-title">
+            <span className="section-title-icon calendar" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false" role="img">
+                <path
+                  d="M7 3a1 1 0 0 1 2 0v1h6V3a1 1 0 1 1 2 0v1h1.5A2.5 2.5 0 0 1 21 6.5v12A2.5 2.5 0 0 1 18.5 21h-13A2.5 2.5 0 0 1 3 18.5v-12A2.5 2.5 0 0 1 5.5 4H7V3Zm11.5 6h-13a.5.5 0 0 0-.5.5v9a1.5 1.5 0 0 0 1.5 1.5h12A1.5 1.5 0 0 0 20 18.5v-9a.5.5 0 0 0-.5-.5Zm-13-2h13V6.5A1.5 1.5 0 0 0 18 5h-.5v1a1 1 0 1 1-2 0V5H8v1a1 1 0 0 1-2 0V5H5.5A1.5 1.5 0 0 0 4 6.5V7Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </span>
+            <span className="section-title-text">USD 주요 경제 지표 캘린더</span>
+          </h2>
           <span>Investing.com의 달력을 참고한 미국 달러 핵심 이벤트를 모았습니다.</span>
         </div>
         <div className="segmented-control" role="tablist" aria-label="기간 선택">

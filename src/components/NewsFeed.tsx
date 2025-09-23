@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchWithProxies } from '../utils/proxyFetch'
+import { fallbackNewsNotice, getFallbackNews } from '../utils/fallbackData'
 
 type NewsItem = {
   id: string
@@ -223,6 +224,14 @@ const NewsFeed = () => {
         return
       }
 
+      const fallbackNews = getFallbackNews()
+      if (fallbackNews.length > 0) {
+        setNews(fallbackNews)
+        setStatus('idle')
+        setNotice(fallbackNewsNotice)
+        return
+      }
+
       setNews([])
       if (errors.length > 0) {
         setStatus('error')
@@ -253,7 +262,17 @@ const NewsFeed = () => {
     <section className="section" aria-labelledby="news-feed-heading">
       <div className="section-header">
         <div>
-          <h2 id="news-feed-heading">실시간 미국 증시 · 코인 속보</h2>
+          <h2 id="news-feed-heading" className="section-title">
+            <span className="section-title-icon news" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false" role="img">
+                <path
+                  d="M5 4a2 2 0 0 0-2 2v12a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3H5Zm0 2h12a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6Zm2 2v3h6V8H7Zm0 5v3h6v-3H7Zm8-5h2v8h-2V8Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </span>
+            <span className="section-title-text">실시간 미국 증시 · 코인 속보</span>
+          </h2>
           <span>미국 증시와 주요 코인 관련 뉴스를 선별해 빠르게 전해드립니다.</span>
         </div>
       </div>
