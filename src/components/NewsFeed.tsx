@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { fetchWithProxies } from '../utils/proxyFetch'
 
 type NewsItem = {
   id: string
@@ -101,68 +102,94 @@ const formatDateLabel = (date: Date) => {
 const NewsFeed = () => {
   const [news, setNews] = useState<NewsItem[]>([])
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
 
     const loadNews = async () => {
       setStatus('loading')
-      try {
-        const fmpKey = import.meta.env.VITE_FMP_KEY || 'demo'
-        const alphaVantageKey = import.meta.env.VITE_ALPHA_VANTAGE_KEY || 'demo'
+      setNotice(null)
 
-        let normalized: NewsItem[] = []
-        const errors: unknown[] = []
+      const fmpKey = import.meta.env.VITE_FMP_KEY?.trim()
+      const alphaVantageKey = import.meta.env.VITE_ALPHA_VANTAGE_KEY?.trim()
+      const shouldUseAlpha = Boolean(alphaVantageKey && alphaVantageKey.toLowerCase() !== 'demo')
 
+      const candidates: Array<{
+        label: string
+        notice: string | null
+        loader: () => Promise<NewsItem[]>
+      }> = []
+
+      if (fmpKey) {
+        candidates.push({
+          label: 'Financial Modeling Prep',
+          notice: 'Financial Modeling Prep 실시간 속보 API를 통해 제공됩니다.',
+          loader: () => fetchFmpNews(fmpKey),
+        })
+      }
+
+      candidates.push({
+        label: 'Google 뉴스',
+        notice: 'Google 뉴스 Business RSS 피드를 통해 최신 소식을 제공합니다.',
+        loader: fetchGoogleNewsRss,
+      })
+
+      if (shouldUseAlpha && alphaVantageKey) {
+        candidates.push({
+          label: 'Alpha Vantage',
+          notice: 'Alpha Vantage 뉴스 API 기반 데이터입니다.',
+          loader: () => fetchAlphaVantageNews(alphaVantageKey),
+        })
+      }
+
+      const errors: unknown[] = []
+      let loadedNews: NewsItem[] = []
+      let selectedNotice: string | null = null
+
+      for (const candidate of candidates) {
         try {
-          normalized = await fetchFmpNews(fmpKey)
+          const result = await candidate.loader()
+          if (result.length > 0) {
+            loadedNews = result
+            selectedNotice = candidate.notice
+            break
+          }
         } catch (error) {
+          console.error(`${candidate.label} 뉴스 로딩 실패`, error)
           errors.push(error)
         }
+      }
 
-        if (!normalized.length) {
-          try {
-            normalized = await fetchAlphaVantageNews(alphaVantageKey)
-          } catch (error) {
-            errors.push(error)
-          }
-        }
+      if (!active) {
+        return
+      }
 
-        if (!normalized.length) {
-          try {
-            normalized = await fetchGoogleNewsRss()
-          } catch (error) {
-            errors.push(error)
-          }
-        }
-
-        if (!active) {
-          return
-        }
-
-        if (!normalized.length) {
-          if (errors.length > 0) {
-            throw errors[0] instanceof Error
-              ? errors[0]
-              : new Error('뉴스 데이터를 불러오는 데 실패했습니다.')
-          }
-
-          setNews([])
-          setStatus('idle')
-          return
-        }
-
-        setNews(normalized)
+      if (loadedNews.length > 0) {
+        setNews(loadedNews)
         setStatus('idle')
-      } catch (error) {
-        console.error(error)
-        if (active) {
-          setStatus('error')
-        }
+        setNotice(selectedNotice)
+        return
+      }
+
+      setNews([])
+      if (errors.length > 0) {
+        setStatus('error')
+        setNotice('실시간 뉴스 공급자에 연결할 수 없습니다. 네트워크 상태를 확인한 후 다시 시도해 주세요.')
+      } else {
+        setStatus('idle')
+        setNotice('현재 표시할 실시간 뉴스가 없습니다. 잠시 후 다시 확인해 주세요.')
       }
     }
 
-    loadNews()
+    loadNews().catch((error) => {
+      if (!active) {
+        return
+      }
+      console.error('뉴스 데이터를 불러오는 중 예기치 못한 오류가 발생했습니다.', error)
+      setStatus('error')
+      setNotice('뉴스 데이터를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.')
+    })
     const interval = window.setInterval(loadNews, 5 * 60_000)
 
     return () => {
@@ -186,11 +213,17 @@ const NewsFeed = () => {
         </div>
       )}
 
+      {status !== 'loading' && notice && (
+        <div className="status-banner" role="status">
+          {notice}
+        </div>
+      )}
+
       {status === 'loading' && news.length === 0 ? (
         <div className="status-banner" role="status">
           경제 뉴스를 불러오는 중입니다...
         </div>
-      ) : (
+      ) : news.length > 0 ? (
         <div className="news-grid">
           {news.slice(0, 9).map((item) => (
             <article className="news-card" key={item.id}>
@@ -208,7 +241,7 @@ const NewsFeed = () => {
             </article>
           ))}
         </div>
-      )}
+      ) : null}
     </section>
   )
 }
@@ -222,7 +255,7 @@ const fetchFmpNews = async (apiKey: string): Promise<NewsItem[]> => {
   url.searchParams.set('limit', '50')
   url.searchParams.set('apikey', apiKey)
 
-  const response = await fetch(url.toString())
+  const response = await fetchWithProxies(url)
   if (!response.ok) {
     throw new Error('Financial Modeling Prep 뉴스 응답 오류')
   }
@@ -269,7 +302,7 @@ const fetchAlphaVantageNews = async (apiKey: string): Promise<NewsItem[]> => {
   url.searchParams.set('limit', '12')
   url.searchParams.set('apikey', apiKey)
 
-  const response = await fetch(url.toString())
+  const response = await fetchWithProxies(url)
   if (!response.ok) {
     throw new Error('Alpha Vantage 뉴스 응답 오류')
   }
@@ -297,14 +330,57 @@ const fetchAlphaVantageNews = async (apiKey: string): Promise<NewsItem[]> => {
 }
 
 const fetchGoogleNewsRss = async (): Promise<NewsItem[]> => {
-  const rssUrl =
-    'https://r.jina.ai/https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=ko&gl=KR&ceid=KR:ko'
-  const response = await fetch(rssUrl)
-  if (!response.ok) {
-    throw new Error('Google 뉴스 응답 오류')
+  const baseUrl = new URL('https://news.google.com/rss/headlines/section/topic/BUSINESS')
+  baseUrl.searchParams.set('hl', 'ko')
+  baseUrl.searchParams.set('gl', 'KR')
+  baseUrl.searchParams.set('ceid', 'KR:ko')
+
+  const buildRssHeaders = () => ({
+    Accept: 'application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5',
+  })
+
+  const loaders: Array<() => Promise<Response>> = [
+    () => fetchWithProxies(baseUrl, { headers: buildRssHeaders() }),
+    () =>
+      fetch(`https://r.jina.ai/${baseUrl.toString()}`, {
+        headers: buildRssHeaders(),
+      }),
+  ]
+
+  const errors: unknown[] = []
+
+  for (const loader of loaders) {
+    try {
+      const response = await loader()
+      if (!response.ok) {
+        const error = new Error(`Google 뉴스 RSS 응답 오류 (status: ${response.status})`)
+        console.error(error)
+        errors.push(error)
+        continue
+      }
+
+      const raw = await response.text()
+      const parsed = parseGoogleNewsRss(raw)
+
+      if (parsed.length > 0) {
+        return parsed
+      }
+    } catch (error) {
+      console.error('Google 뉴스 RSS 소스 로딩 실패', error)
+      errors.push(error)
+    }
   }
 
-  const raw = await response.text()
+  if (errors.length > 0) {
+    throw errors[0] instanceof Error
+      ? errors[0]
+      : new Error('Google 뉴스 RSS 데이터를 불러오는 중 알 수 없는 오류가 발생했습니다.')
+  }
+
+  return []
+}
+
+const parseGoogleNewsRss = (raw: string): NewsItem[] => {
   if (typeof DOMParser === 'undefined') {
     throw new Error('RSS 파서를 초기화할 수 없습니다.')
   }
