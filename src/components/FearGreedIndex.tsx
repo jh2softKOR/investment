@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchWithProxies } from '../utils/proxyFetch'
+import { parseNumericValue } from '../utils/marketData'
 
 type FearGreedEntry = {
   value: number
@@ -9,8 +10,11 @@ type FearGreedEntry = {
 
 type Tone = 'extreme-greed' | 'greed' | 'neutral' | 'fear' | 'extreme-fear'
 
+type FearGreedVariant = 'us-market' | 'crypto'
+
 type FearGreedIndexProps = {
   className?: string
+  variant?: FearGreedVariant
 }
 
 const classificationMap: Record<string, { label: string; tone: Tone }> = {
@@ -27,6 +31,22 @@ const toneColors: Record<Tone, { stroke: string; fill: string }> = {
   neutral: { stroke: '#38bdf8', fill: 'rgba(56, 189, 248, 0.18)' },
   fear: { stroke: '#f97316', fill: 'rgba(249, 115, 22, 0.18)' },
   'extreme-fear': { stroke: '#f87171', fill: 'rgba(248, 113, 113, 0.18)' },
+}
+
+const variantMetadata: Record<
+  FearGreedVariant,
+  { title: string; subtitle: string; sourceNote: string }
+> = {
+  'us-market': {
+    title: '미국 증시 공포·탐욕 지수',
+    subtitle: 'CNN Business Fear & Greed Index',
+    sourceNote: '데이터 출처: CNN Business · 주식시장 투자심리 지수',
+  },
+  crypto: {
+    title: '코인 공포·탐욕 지수',
+    subtitle: 'Alternative.me Crypto Fear & Greed Index',
+    sourceNote: '데이터 출처: Alternative.me · 비트코인 기반 투자심리 지수',
+  },
 }
 
 const chartConfig = {
@@ -75,7 +95,7 @@ const resolveTone = (entry: FearGreedEntry | null): { label: string; tone: Tone 
   }
 
   const computed = resolveToneByValue(entry.value)
-  const classificationKey = entry.classification.toLowerCase()
+  const classificationKey = entry.classification.trim().toLowerCase()
   const mapped = classificationMap[classificationKey]
 
   if (mapped && mapped.tone === computed.tone) {
@@ -114,46 +134,65 @@ const buildChartPaths = (history: FearGreedEntry[]) => {
   return { linePath, areaPath, latestPoint: points[points.length - 1], baselineY }
 }
 
-const parseFearGreedResponse = (payload: unknown): FearGreedEntry[] => {
+const parseTimestampValue = (value: unknown): Date | null => {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      return null
+    }
+    const normalized = value > 1_000_000_000_000 ? value : value * 1000
+    const date = new Date(normalized)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return null
+    }
+    if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) {
+      const numeric = Number.parseFloat(trimmed)
+      return parseTimestampValue(numeric)
+    }
+    const parsed = new Date(trimmed)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+
+  return null
+}
+
+const parseCryptoFearGreedResponse = (payload: unknown): FearGreedEntry[] => {
   if (!payload || typeof payload !== 'object' || !('data' in payload)) {
     return []
   }
 
   const entries = Array.isArray((payload as { data?: unknown }).data)
     ? ((payload as { data: unknown[] }).data as Array<{
-        value?: string
+        value?: unknown
         value_classification?: string
-        timestamp?: string | number
+        timestamp?: unknown
       }>)
     : []
 
   return entries
     .map((item) => {
-      const value = typeof item.value === 'string' ? Number.parseFloat(item.value) : Number(item.value)
-      if (!Number.isFinite(value)) {
+      const value = parseNumericValue(item.value)
+      if (value === null) {
         return null
       }
 
-      const timestampSource = item.timestamp
-      const numericTimestamp =
-        typeof timestampSource === 'number'
-          ? timestampSource
-          : typeof timestampSource === 'string'
-            ? Number.parseInt(timestampSource, 10)
-            : NaN
-
-      const timestamp = Number.isFinite(numericTimestamp)
-        ? new Date(numericTimestamp * 1000)
-        : new Date(typeof timestampSource === 'string' ? timestampSource : '')
-
-      if (Number.isNaN(timestamp.getTime())) {
+      const timestamp = parseTimestampValue(item.timestamp)
+      if (!timestamp) {
         return null
       }
 
       const classification =
         typeof item.value_classification === 'string' && item.value_classification.trim().length > 0
           ? item.value_classification.trim()
-          : 'Neutral'
+          : resolveToneByValue(value).label
 
       return {
         value,
@@ -165,21 +204,136 @@ const parseFearGreedResponse = (payload: unknown): FearGreedEntry[] => {
     .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
 }
 
-const fetchFearGreedHistory = async (): Promise<FearGreedEntry[]> => {
+const parseUsFearGreedResponse = (payload: unknown): FearGreedEntry[] => {
+  if (!payload || typeof payload !== 'object') {
+    return []
+  }
+
+  const entries: FearGreedEntry[] = []
+  const addEntry = (valueRaw: unknown, ratingRaw: unknown, timestampRaw: unknown) => {
+    const value = parseNumericValue(valueRaw)
+    if (value === null) {
+      return
+    }
+    const timestamp = parseTimestampValue(timestampRaw)
+    if (!timestamp) {
+      return
+    }
+    const classification =
+      typeof ratingRaw === 'string' && ratingRaw.trim().length > 0
+        ? ratingRaw.trim()
+        : resolveToneByValue(value).label
+    entries.push({
+      value,
+      classification,
+      timestamp,
+    })
+  }
+
+  const root = payload as Record<string, unknown>
+  const latestSection =
+    root.fear_and_greed && typeof root.fear_and_greed === 'object'
+      ? (root.fear_and_greed as Record<string, unknown>)
+      : null
+
+  if (latestSection) {
+    const timestampCandidate =
+      latestSection.timestamp ??
+      latestSection.last_updated ??
+      latestSection.last_update ??
+      latestSection.updated ??
+      Date.now()
+
+    addEntry(latestSection.score, latestSection.rating, timestampCandidate)
+
+    const previousKeys = ['previous_close', 'previous_1_week', 'previous_1_month', 'previous_1_year'] as const
+    previousKeys.forEach((key) => {
+      const section = latestSection[key]
+      if (section && typeof section === 'object') {
+        const sectionRecord = section as Record<string, unknown>
+        addEntry(sectionRecord.score, sectionRecord.rating, sectionRecord.timestamp)
+      }
+    })
+  }
+
+  const historicalContainer =
+    root.fear_and_greed_historical && typeof root.fear_and_greed_historical === 'object'
+      ? (root.fear_and_greed_historical as Record<string, unknown>)
+      : null
+
+  const historicalData = Array.isArray(historicalContainer?.data)
+    ? (historicalContainer!.data as Array<{ x?: unknown; y?: unknown; rating?: unknown }>)
+    : []
+
+  historicalData.forEach((item) => {
+    addEntry(item.y, item.rating, item.x)
+  })
+
+  const deduplicated = new Map<number, FearGreedEntry>()
+  entries.forEach((entry) => {
+    const key = entry.timestamp.getTime()
+    if (!Number.isFinite(key)) {
+      return
+    }
+
+    const existing = deduplicated.get(key)
+    if (!existing) {
+      deduplicated.set(key, entry)
+      return
+    }
+
+    const existingClassification = existing.classification.trim().toLowerCase()
+    const incomingClassification = entry.classification.trim().toLowerCase()
+
+    if (!existingClassification && incomingClassification) {
+      deduplicated.set(key, entry)
+      return
+    }
+
+    if (!classificationMap[existingClassification] && classificationMap[incomingClassification]) {
+      deduplicated.set(key, entry)
+    }
+  })
+
+  return Array.from(deduplicated.values()).sort(
+    (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
+  )
+}
+
+const fetchCryptoFearGreedHistory = async (): Promise<FearGreedEntry[]> => {
   const url = new URL('https://api.alternative.me/fng/')
   url.searchParams.set('limit', '30')
   url.searchParams.set('format', 'json')
 
   const response = await fetchWithProxies(url)
   if (!response.ok) {
-    throw new Error('Fear & Greed Index 응답 오류')
+    throw new Error('Crypto Fear & Greed Index 응답 오류')
   }
 
   const payload = await response.json()
-  return parseFearGreedResponse(payload)
+  return parseCryptoFearGreedResponse(payload)
 }
 
-const FearGreedIndex = ({ className }: FearGreedIndexProps) => {
+const fetchUsFearGreedHistory = async (): Promise<FearGreedEntry[]> => {
+  const url = new URL('https://production.dataviz.cnn.io/index/fearandgreed/graphdata')
+
+  const response = await fetchWithProxies(url)
+  if (!response.ok) {
+    throw new Error('CNN Fear & Greed Index 응답 오류')
+  }
+
+  const payload = await response.json()
+  return parseUsFearGreedResponse(payload)
+}
+
+const fetchFearGreedHistory = async (variant: FearGreedVariant): Promise<FearGreedEntry[]> => {
+  if (variant === 'crypto') {
+    return fetchCryptoFearGreedHistory()
+  }
+  return fetchUsFearGreedHistory()
+}
+
+const FearGreedIndex = ({ className, variant = 'us-market' }: FearGreedIndexProps) => {
   const [history, setHistory] = useState<FearGreedEntry[]>([])
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
 
@@ -187,12 +341,17 @@ const FearGreedIndex = ({ className }: FearGreedIndexProps) => {
     let active = true
 
     const loadHistory = async (showLoading = false) => {
+      if (!active) {
+        return
+      }
+
       if (showLoading) {
         setStatus('loading')
+        setHistory([])
       }
 
       try {
-        const entries = await fetchFearGreedHistory()
+        const entries = await fetchFearGreedHistory(variant)
         if (!active) {
           return
         }
@@ -206,7 +365,7 @@ const FearGreedIndex = ({ className }: FearGreedIndexProps) => {
         setHistory(entries)
         setStatus('idle')
       } catch (error) {
-        console.error('Fear & Greed Index 로딩 실패', error)
+        console.error(`Fear & Greed Index (${variant}) 로딩 실패`, error)
         if (!active) {
           return
         }
@@ -222,7 +381,7 @@ const FearGreedIndex = ({ className }: FearGreedIndexProps) => {
       active = false
       window.clearInterval(interval)
     }
-  }, [])
+  }, [variant])
 
   const latestEntry = history[0] ?? null
   const previousEntry = history[1] ?? null
@@ -252,18 +411,21 @@ const FearGreedIndex = ({ className }: FearGreedIndexProps) => {
   const deltaClass = delta === null ? null : delta > 0 ? 'up' : delta < 0 ? 'down' : 'neutral'
   const deltaSymbol = delta === null ? null : delta > 0 ? '▲' : delta < 0 ? '▼' : '―'
   const officialClassificationLabel = latestEntry
-    ? classificationMap[latestEntry.classification.toLowerCase()]?.label ?? latestEntry.classification
+    ? classificationMap[latestEntry.classification.trim().toLowerCase()]?.label ?? latestEntry.classification
     : null
 
-  const containerClassName = className
-    ? `fear-greed-card ${className}`
-    : 'fear-greed-card'
+  const metadata = variantMetadata[variant]
+  const baseClassName = `fear-greed-card variant-${variant}`
+  const containerClassName = className ? `${baseClassName} ${className}` : baseClassName
 
   return (
     <aside className={containerClassName} aria-live="polite">
       <div className="fear-greed-header">
         <div>
-          <span className="fear-greed-title">미국 증시 공포·탐욕 지수</span>
+          <span className="fear-greed-title">{metadata.title}</span>
+          {metadata.subtitle && (
+            <span className="fear-greed-subtitle">{metadata.subtitle}</span>
+          )}
           <div className="fear-greed-value-row">
             <strong className="fear-greed-value">{latestEntry ? latestEntry.value : '-'}</strong>
             <span className={`fear-greed-badge ${sentiment.tone}`}>{sentiment.label}</span>
@@ -353,7 +515,7 @@ const FearGreedIndex = ({ className }: FearGreedIndexProps) => {
       <div className="fear-greed-meta">
         <span>업데이트: {formatUpdatedAt(latestEntry?.timestamp ?? null)}</span>
         <span>공식 분류: {officialClassificationLabel ?? '-'}</span>
-        <span>지난 30일 추세</span>
+        <span>{metadata.sourceNote}</span>
       </div>
     </aside>
   )
