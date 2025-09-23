@@ -28,69 +28,6 @@ const parseNumericValue = (value: unknown): number | null => {
   return null
 }
 
-const yahooQuoteEndpoints = [
-  'https://query2.finance.yahoo.com/v7/finance/quote',
-  'https://query1.finance.yahoo.com/v7/finance/quote',
-]
-
-const fetchYahooQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {
-  if (!symbols.length) {
-    return {}
-  }
-
-  let lastError: unknown = null
-
-  for (let index = 0; index < yahooQuoteEndpoints.length; index += 1) {
-    const endpoint = yahooQuoteEndpoints[index]
-    const url = new URL(endpoint)
-    url.searchParams.set('symbols', symbols.join(','))
-
-    try {
-      const response = await fetchWithProxies(url)
-      if (!response.ok) {
-        throw new Error(`Yahoo Finance 응답 오류 (status: ${response.status})`)
-      }
-
-      const data = await response.json()
-      const results = (data?.quoteResponse?.result ?? []) as Array<{
-        symbol?: string
-        regularMarketPrice?: number | string | null
-        regularMarketChangePercent?: number | string | null
-      }>
-
-      if (!results.length) {
-        lastError = new Error('Yahoo Finance 응답에 유효한 결과가 없습니다.')
-        continue
-      }
-
-      const mapped: Record<string, PriceInfo> = {}
-      results.forEach((item) => {
-        if (!item.symbol) {
-          return
-        }
-
-        const price = parseNumericValue(item.regularMarketPrice)
-        const changePercent = parseNumericValue(item.regularMarketChangePercent)
-
-        mapped[item.symbol] = {
-          price,
-          changePercent,
-        }
-      })
-
-      return mapped
-    } catch (error) {
-      lastError = error
-    }
-  }
-
-  if (lastError instanceof Error) {
-    throw lastError
-  }
-
-  throw new Error('Yahoo Finance 시세를 불러오지 못했습니다.')
-}
-
 type ExchangeRateHostResponse = {
   success?: boolean
   rates?: Record<string, number | string | null>
@@ -208,11 +145,9 @@ const fetchStooqQuotes = async (symbols: string[]): Promise<Record<string, Price
 
   const results = await Promise.all(
     symbols.map(async (symbol) => {
-      const url = new URL('https://stooq.com/q/l/')
+      const url = new URL('https://stooq.com/q/d/l/')
       url.searchParams.set('s', symbol)
-      url.searchParams.set('f', 'sd2t2ohlcv')
-      url.searchParams.set('h', '1')
-      url.searchParams.set('e', 'csv')
+      url.searchParams.set('i', 'd')
 
       const response = await fetchWithProxies(url)
       if (!response.ok) {
@@ -220,24 +155,58 @@ const fetchStooqQuotes = async (symbols: string[]): Promise<Record<string, Price
       }
 
       const text = await response.text()
-      const lines = text.trim().split(/\r?\n/)
+      const trimmed = text.trim()
+      if (!trimmed) {
+        return null
+      }
+
+      const lines = trimmed.split(/\r?\n/).filter((line) => line.trim().length > 0)
       if (lines.length < 2) {
         return null
       }
 
-      const dataLine = lines[1]
-      const columns = dataLine.split(',')
-      if (columns.length < 7) {
+      const header = lines[0].split(',').map((entry) => entry.trim().toLowerCase())
+      const closeIndex = header.findIndex((entry) => entry === 'close' || entry === 'c')
+      const resolvedCloseIndex = closeIndex >= 0 ? closeIndex : 4
+
+      const parseRow = (line: string) =>
+        line
+          .split(',')
+          .map((entry) => entry.trim())
+
+      const dataRows = lines.slice(1)
+      const latestRow = parseRow(dataRows[dataRows.length - 1])
+      const previousRow = dataRows.length > 1 ? parseRow(dataRows[dataRows.length - 2]) : null
+
+      if (resolvedCloseIndex >= latestRow.length) {
         return null
       }
 
-      const closeValue = parseNumericValue(columns[6])
+      const latestClose = parseNumericValue(latestRow[resolvedCloseIndex])
+      const previousClose =
+        previousRow && resolvedCloseIndex < previousRow.length
+          ? parseNumericValue(previousRow[resolvedCloseIndex])
+          : null
+
+      let changePercent: number | null = null
+      if (
+        latestClose !== null &&
+        previousClose !== null &&
+        previousClose !== 0 &&
+        Number.isFinite(previousClose)
+      ) {
+        changePercent = ((latestClose - previousClose) / previousClose) * 100
+      }
+
+      if (latestClose === null && changePercent === null) {
+        return null
+      }
 
       return {
         symbol,
         info: {
-          price: closeValue,
-          changePercent: null,
+          price: latestClose,
+          changePercent,
         },
       }
     })
@@ -448,6 +417,5 @@ export {
   fetchStooqQuotes,
   fetchWtiFromStooq,
   fetchUsdKrwFromExchangeRateHost,
-  fetchYahooQuotes,
   parseNumericValue,
 }
