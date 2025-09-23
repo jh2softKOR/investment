@@ -120,11 +120,15 @@ const parseNumericValue = (value: unknown): number | null => {
   return null
 }
 
+const usdKrwSymbol = 'KRW=X' as const
+
 const MarketOverview = () => {
   const [prices, setPrices] = useState<Record<string, PriceInfo>>({})
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
   const [providerStatuses, setProviderStatuses] = useState(() => createProviderStatusState('loading'))
   const [providerMessages, setProviderMessages] = useState(() => createProviderMessageState())
+  const [usdKrw, setUsdKrw] = useState<PriceInfo | null>(null)
+  const [usdKrwStatus, setUsdKrwStatus] = useState<'idle' | 'loading' | 'error'>('loading')
 
   const fmpApiKey = import.meta.env.VITE_FMP_KEY?.trim() ?? ''
 
@@ -158,8 +162,10 @@ const MarketOverview = () => {
       }> = []
       const missingProviders: PriceProvider[] = []
 
-      if (yahooSymbols.length) {
-        tasks.push({ provider: 'yahoo', promise: fetchYahooQuotes(yahooSymbols) })
+      const yahooTaskSymbols = Array.from(new Set([...yahooSymbols, usdKrwSymbol]))
+
+      if (yahooTaskSymbols.length) {
+        tasks.push({ provider: 'yahoo', promise: fetchYahooQuotes(yahooTaskSymbols) })
       }
       if (binanceSymbols.length) {
         tasks.push({ provider: 'binance', promise: fetchBinanceQuotes(binanceSymbols) })
@@ -179,6 +185,8 @@ const MarketOverview = () => {
         if (active) {
           setStatus(missingProviders.length ? 'error' : 'idle')
           setPrices({})
+          setUsdKrw(null)
+          setUsdKrwStatus('error')
           const nextStatuses = createProviderStatusState('idle')
           missingProviders.forEach((provider) => {
             nextStatuses[provider] = 'error'
@@ -195,6 +203,9 @@ const MarketOverview = () => {
       }
 
       setStatus('loading')
+      if (tasks.some((task) => task.provider === 'yahoo')) {
+        setUsdKrwStatus('loading')
+      }
       setProviderStatuses((prev) => {
         const next = { ...prev }
         tasks.forEach(({ provider }) => {
@@ -248,6 +259,8 @@ const MarketOverview = () => {
 
         if (!hasSuccess) {
           setPrices({})
+          setUsdKrw(null)
+          setUsdKrwStatus('error')
           return
         }
 
@@ -267,6 +280,18 @@ const MarketOverview = () => {
         })
 
         setPrices(aggregated)
+
+        const yahooMap = providerResults.yahoo
+        if (yahooMap) {
+          const nextUsdKrw = yahooMap[usdKrwSymbol] ?? null
+          const hasUsdKrwValue =
+            nextUsdKrw && (nextUsdKrw.price !== null || nextUsdKrw.changePercent !== null)
+          setUsdKrw(nextUsdKrw ?? null)
+          setUsdKrwStatus(hasUsdKrwValue ? 'idle' : 'error')
+        } else if (nextProviderStatuses.yahoo === 'error') {
+          setUsdKrw(null)
+          setUsdKrwStatus('error')
+        }
       } catch (error) {
         console.error(error)
         if (!active) {
@@ -289,6 +314,8 @@ const MarketOverview = () => {
           return next
         })
         setPrices({})
+        setUsdKrw(null)
+        setUsdKrwStatus('error')
       }
     }
 
@@ -339,6 +366,28 @@ const MarketOverview = () => {
     return '데이터 없음'
   }
 
+  const usdKrwFallbackLabel = getFallbackLabel('yahoo')
+  const usdKrwPriceLabel =
+    usdKrw?.price !== null && usdKrw?.price !== undefined
+      ? new Intl.NumberFormat('ko-KR', {
+          style: 'currency',
+          currency: 'KRW',
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2,
+        }).format(usdKrw.price)
+      : usdKrwFallbackLabel
+
+  const usdKrwChangeLabel =
+    usdKrw?.changePercent !== null && usdKrw?.changePercent !== undefined
+      ? formatChange(usdKrw.changePercent)
+      : null
+  const usdKrwChangeClass =
+    usdKrw?.changePercent !== null && usdKrw?.changePercent !== undefined
+      ? usdKrw.changePercent >= 0
+        ? 'usd-krw-change up'
+        : 'usd-krw-change down'
+      : 'usd-krw-change'
+
   return (
     <section className="section" aria-labelledby="market-overview-heading">
       <div className="section-header">
@@ -349,30 +398,54 @@ const MarketOverview = () => {
       </div>
 
       <div className="market-top-row">
-        <div className="market-summary" aria-live="polite">
-          {assets.map((asset) => {
-            const price = prices[asset.id]?.price ?? null
-            const changePercent = prices[asset.id]?.changePercent ?? null
-            const changeLabel = formatChange(changePercent)
-            const fallbackLabel = getFallbackLabel(asset.priceSource?.provider)
-            const summaryPriceLabel =
-              price !== null ? formatPrice(price, asset.formatOptions) : fallbackLabel
-            const summaryChangeLabel = changeLabel ?? fallbackLabel
-            const summaryState =
-              changePercent === null ? 'neutral' : changePercent >= 0 ? 'up' : 'down'
-
-            return (
-              <div className={`market-summary-item ${summaryState}`} key={asset.id}>
-                <span className="market-summary-name">{asset.title}</span>
-                <div className="market-summary-metrics">
-                  <span className="market-summary-price">{summaryPriceLabel}</span>
-                  <span className="market-summary-change">{summaryChangeLabel}</span>
-                </div>
-              </div>
-            )
-          })}
+        <FearGreedIndex className="prominent" />
+        <div
+          className="usd-krw-card"
+          role="complementary"
+          aria-live="polite"
+          aria-busy={usdKrwStatus === 'loading'}
+          data-state={usdKrwStatus}
+        >
+          <div className="usd-krw-header">
+            <span className="usd-krw-title">원/달러 환율</span>
+            <span className="usd-krw-subtitle">KRW=X · 1 USD 기준</span>
+          </div>
+          <div className="usd-krw-value-row">
+            <strong className="usd-krw-value">{usdKrwPriceLabel}</strong>
+            {usdKrwChangeLabel ? (
+              <span className={usdKrwChangeClass}>{usdKrwChangeLabel}</span>
+            ) : (
+              <span className="usd-krw-change placeholder">{usdKrwFallbackLabel}</span>
+            )}
+          </div>
+          <p className="usd-krw-meta">
+            서울 외환시장 실시간 환율 · 야후 파이낸스 · 1분 단위 자동 갱신
+          </p>
         </div>
-        <FearGreedIndex />
+      </div>
+
+      <div className="market-summary" aria-live="polite">
+        {assets.map((asset) => {
+          const price = prices[asset.id]?.price ?? null
+          const changePercent = prices[asset.id]?.changePercent ?? null
+          const changeLabel = formatChange(changePercent)
+          const fallbackLabel = getFallbackLabel(asset.priceSource?.provider)
+          const summaryPriceLabel =
+            price !== null ? formatPrice(price, asset.formatOptions) : fallbackLabel
+          const summaryChangeLabel = changeLabel ?? fallbackLabel
+          const summaryState =
+            changePercent === null ? 'neutral' : changePercent >= 0 ? 'up' : 'down'
+
+          return (
+            <div className={`market-summary-item ${summaryState}`} key={asset.id}>
+              <span className="market-summary-name">{asset.title}</span>
+              <div className="market-summary-metrics">
+                <span className="market-summary-price">{summaryPriceLabel}</span>
+                <span className="market-summary-change">{summaryChangeLabel}</span>
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       <div className="chart-grid">
@@ -473,17 +546,23 @@ const fetchYahooQuotes = async (symbols: string[]): Promise<Record<string, Price
 
   const data = await response.json()
   const results = (data?.quoteResponse?.result ?? []) as Array<{
-    symbol: string
-    regularMarketPrice?: number
-    regularMarketChangePercent?: number
+    symbol?: string
+    regularMarketPrice?: number | string | null
+    regularMarketChangePercent?: number | string | null
   }>
 
   const mapped: Record<string, PriceInfo> = {}
   results.forEach((item) => {
+    if (!item.symbol) {
+      return
+    }
+
+    const price = parseNumericValue(item.regularMarketPrice)
+    const changePercent = parseNumericValue(item.regularMarketChangePercent)
+
     mapped[item.symbol] = {
-      price: typeof item.regularMarketPrice === 'number' ? item.regularMarketPrice : null,
-      changePercent:
-        typeof item.regularMarketChangePercent === 'number' ? item.regularMarketChangePercent : null,
+      price,
+      changePercent,
     }
   })
   return mapped

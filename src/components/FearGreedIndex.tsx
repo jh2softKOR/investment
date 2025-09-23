@@ -49,29 +49,40 @@ const formatUpdatedAt = (value: Date | null) => {
   }).format(value)
 }
 
+const resolveToneByValue = (value: number): { label: string; tone: Tone } => {
+  if (!Number.isFinite(value)) {
+    return { label: '데이터 없음', tone: 'neutral' }
+  }
+
+  if (value >= 75) {
+    return { label: '극단적 탐욕', tone: 'extreme-greed' }
+  }
+  if (value >= 55) {
+    return { label: '탐욕', tone: 'greed' }
+  }
+  if (value > 45) {
+    return { label: '중립', tone: 'neutral' }
+  }
+  if (value > 25) {
+    return { label: '공포', tone: 'fear' }
+  }
+  return { label: '극단적 공포', tone: 'extreme-fear' }
+}
+
 const resolveTone = (entry: FearGreedEntry | null): { label: string; tone: Tone } => {
   if (!entry) {
     return { label: '데이터 없음', tone: 'neutral' }
   }
 
-  const mapped = classificationMap[entry.classification.toLowerCase()]
-  if (mapped) {
+  const computed = resolveToneByValue(entry.value)
+  const classificationKey = entry.classification.toLowerCase()
+  const mapped = classificationMap[classificationKey]
+
+  if (mapped && mapped.tone === computed.tone) {
     return mapped
   }
 
-  if (entry.value >= 75) {
-    return { label: '극단적 탐욕', tone: 'extreme-greed' }
-  }
-  if (entry.value >= 55) {
-    return { label: '탐욕', tone: 'greed' }
-  }
-  if (entry.value > 45) {
-    return { label: '중립', tone: 'neutral' }
-  }
-  if (entry.value > 25) {
-    return { label: '공포', tone: 'fear' }
-  }
-  return { label: '극단적 공포', tone: 'extreme-fear' }
+  return computed
 }
 
 const buildChartPaths = (history: FearGreedEntry[]) => {
@@ -240,6 +251,9 @@ const FearGreedIndex = ({ className }: FearGreedIndexProps) => {
   const deltaLabel = delta === null ? null : `${delta > 0 ? '+' : delta < 0 ? '' : ''}${delta}`
   const deltaClass = delta === null ? null : delta > 0 ? 'up' : delta < 0 ? 'down' : 'neutral'
   const deltaSymbol = delta === null ? null : delta > 0 ? '▲' : delta < 0 ? '▼' : '―'
+  const officialClassificationLabel = latestEntry
+    ? classificationMap[latestEntry.classification.toLowerCase()]?.label ?? latestEntry.classification
+    : null
 
   const containerClassName = className
     ? `fear-greed-card ${className}`
@@ -338,6 +352,7 @@ const FearGreedIndex = ({ className }: FearGreedIndexProps) => {
 
       <div className="fear-greed-meta">
         <span>업데이트: {formatUpdatedAt(latestEntry?.timestamp ?? null)}</span>
+        <span>공식 분류: {officialClassificationLabel ?? '-'}</span>
         <span>지난 30일 추세</span>
       </div>
     </aside>
