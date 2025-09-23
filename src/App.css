@@ -116,8 +116,9 @@
 
 .exchange-rate-row {
   display: inline-flex;
-  align-items: baseline;
-  gap: 0.35rem;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
 }
 
 .exchange-rate-title {
@@ -155,6 +156,23 @@
   color: rgba(148, 163, 184, 0.7);
 }
 
+.exchange-rate-hint {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 999px;
+  padding: 0.12rem 0.45rem;
+}
+
+.exchange-rate-notice {
+  font-size: 0.78rem;
+  color: rgba(148, 163, 184, 0.75);
+  margin-top: 0.35rem;
+}
+
 .section {
   background: rgba(15, 23, 42, 0.8);
   border-radius: 20px;
@@ -180,6 +198,52 @@
   margin: 0;
   font-size: clamp(1.5rem, 3vw, 2rem);
   color: #f8fafc;
+}
+
+.section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.section-title-icon {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(59, 130, 246, 0.05));
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  box-shadow: 0 12px 28px rgba(59, 130, 246, 0.22);
+  color: #93c5fd;
+  flex-shrink: 0;
+}
+
+.section-title-icon svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.section-title-icon.markets {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.25), rgba(13, 148, 136, 0.1));
+  border-color: rgba(45, 212, 191, 0.28);
+  box-shadow: 0 12px 28px rgba(34, 197, 94, 0.22);
+  color: #6ee7b7;
+}
+
+.section-title-icon.news {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.28), rgba(253, 224, 71, 0.12));
+  border-color: rgba(251, 191, 36, 0.28);
+  box-shadow: 0 12px 28px rgba(251, 191, 36, 0.2);
+  color: #facc15;
+}
+
+.section-title-text {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.25;
+  color: inherit;
 }
 
 .section-header span {
@@ -232,12 +296,13 @@
 .market-summary-metrics {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 0.3rem;
+  justify-content: space-between;
+  gap: 0.45rem;
   font-size: 0.85rem;
   line-height: 1.2;
   white-space: nowrap;
   min-width: 0;
+  width: 100%;
 }
 
 .market-summary-name {
@@ -273,6 +338,27 @@
   color: rgba(226, 232, 240, 0.6);
 }
 
+.price-with-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.data-fallback-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: rgba(226, 232, 240, 0.75);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .fear-greed-card {
   flex: 0 0 280px;
   max-width: 100%;
@@ -289,6 +375,16 @@
 
 .fear-greed-card.prominent {
   flex: 1 1 360px;
+}
+
+.fear-greed-notice {
+  margin: 0;
+  padding: 0.45rem 0.65rem;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.14);
+  color: rgba(148, 163, 184, 0.85);
+  font-size: 0.8rem;
+  line-height: 1.35;
 }
 
 .yield-spread-card {
@@ -531,21 +627,22 @@
 .calendar-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 
 .calendar-table thead th {
   text-align: left;
-  padding: 0.75rem 0.75rem 0.75rem 0;
+  padding: 0.6rem 0.6rem 0.5rem 0;
   color: rgba(226, 232, 240, 0.7);
   font-weight: 600;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .calendar-table tbody td {
-  padding: 0.85rem 0.75rem 0.85rem 0;
+  padding: 0.6rem 0.6rem 0.6rem 0;
   border-bottom: 1px solid rgba(51, 65, 85, 0.3);
   color: rgba(226, 232, 240, 0.92);
+  line-height: 1.35;
 }
 
 .calendar-table tbody tr:last-child td {
@@ -555,10 +652,10 @@
 .impact-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.2rem 0.7rem;
+  gap: 0.3rem;
+  padding: 0.18rem 0.6rem;
   border-radius: 999px;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   font-weight: 600;
 }
 
@@ -639,6 +736,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
   color: #f1f5f9;
   font-size: 1.1rem;
 }
@@ -736,6 +835,7 @@
   border: 1px solid rgba(148, 163, 184, 0.2);
   color: rgba(226, 232, 240, 0.75);
   font-size: 0.95rem;
+  margin-bottom: 1rem;
 }
 
 .footer {

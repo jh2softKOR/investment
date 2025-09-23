@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchWithProxies } from '../utils/proxyFetch'
 import { parseNumericValue } from '../utils/marketData'
+import {
+  fallbackFearGreedNotice,
+  getFallbackFearGreedHistory,
+} from '../utils/fallbackData'
 
 type FearGreedEntry = {
   value: number
@@ -336,6 +340,7 @@ const fetchFearGreedHistory = async (variant: FearGreedVariant): Promise<FearGre
 const FearGreedIndex = ({ className, variant = 'us-market' }: FearGreedIndexProps) => {
   const [history, setHistory] = useState<FearGreedEntry[]>([])
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -348,6 +353,21 @@ const FearGreedIndex = ({ className, variant = 'us-market' }: FearGreedIndexProp
       if (showLoading) {
         setStatus('loading')
         setHistory([])
+        setNotice(null)
+      }
+
+      const applyFallback = () => {
+        const fallbackHistory = getFallbackFearGreedHistory(variant)
+        if (fallbackHistory.length === 0) {
+          setHistory([])
+          setStatus('error')
+          setNotice(null)
+          return
+        }
+
+        setHistory(fallbackHistory)
+        setStatus('idle')
+        setNotice(fallbackFearGreedNotice)
       }
 
       try {
@@ -357,20 +377,20 @@ const FearGreedIndex = ({ className, variant = 'us-market' }: FearGreedIndexProp
         }
 
         if (entries.length === 0) {
-          setHistory([])
-          setStatus('error')
+          applyFallback()
           return
         }
 
         setHistory(entries)
         setStatus('idle')
+        setNotice(null)
       } catch (error) {
         console.error(`Fear & Greed Index (${variant}) 로딩 실패`, error)
         if (!active) {
           return
         }
 
-        setStatus('error')
+        applyFallback()
       }
     }
 
@@ -437,6 +457,8 @@ const FearGreedIndex = ({ className, variant = 'us-market' }: FearGreedIndexProp
           </span>
         )}
       </div>
+
+      {notice && <p className="fear-greed-notice">{notice}</p>}
 
       {status === 'loading' ? (
         <div className="fear-greed-status">지수를 불러오는 중입니다...</div>

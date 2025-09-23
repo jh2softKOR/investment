@@ -3,6 +3,11 @@ import FearGreedIndex from './FearGreedIndex'
 import YieldSpreadCard from './YieldSpreadCard'
 import TradingViewChart from './TradingViewChart'
 import { fetchBinanceQuotes, fetchFmpQuotes, fetchGateIoQuotes, fetchStooqQuotes } from '../utils/marketData'
+import {
+  fallbackMarketNotice,
+  fallbackMarketPartialNotice,
+  fallbackMarketPrices,
+} from '../utils/fallbackData'
 import type { PriceInfo } from '../utils/marketData'
 
 const priceProviders = ['stooq', 'binance', 'gateio', 'fmp'] as const
@@ -112,12 +117,17 @@ const baseFormatOptions: Intl.NumberFormatOptions = {
   maximumFractionDigits: 2,
 }
 
+const createAssetFallbackState = () =>
+  Object.fromEntries(assets.map((asset) => [asset.id, false])) as Record<string, boolean>
+
 const MarketOverview = () => {
   const [prices, setPrices] = useState<Record<string, PriceInfo>>({})
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
   const [providerStatuses, setProviderStatuses] = useState(() => createProviderStatusState('loading'))
   const [providerMessages, setProviderMessages] = useState(() => createProviderMessageState())
   const [assetProviders, setAssetProviders] = useState(() => createAssetProviderState())
+  const [assetFallbacks, setAssetFallbacks] = useState(() => createAssetFallbackState())
+  const [notice, setNotice] = useState<string | null>(null)
 
   const fmpApiKey = import.meta.env.VITE_FMP_KEY?.trim() ?? ''
 
@@ -174,11 +184,14 @@ const MarketOverview = () => {
           setProviderStatuses(createProviderStatusState('idle'))
           setProviderMessages(createProviderMessageState())
           setAssetProviders(createAssetProviderState())
+          setAssetFallbacks(createAssetFallbackState())
+          setNotice(null)
         }
         return
       }
 
       setStatus('loading')
+      setNotice(null)
       setProviderStatuses((prev) => {
         const next = { ...prev }
         tasks.forEach(({ provider }) => {
@@ -230,6 +243,7 @@ const MarketOverview = () => {
 
         const aggregated: Record<string, PriceInfo> = {}
         const resolvedProviders = createAssetProviderState()
+        const fallbackFlags = createAssetFallbackState()
 
         assets.forEach((asset) => {
           let fallbackChange: number | null = null
@@ -271,8 +285,45 @@ const MarketOverview = () => {
           }
         })
 
+        if (!hasSuccess) {
+          const fallbackAggregated: Record<string, PriceInfo> = {}
+          assets.forEach((asset) => {
+            const fallbackInfo = fallbackMarketPrices[asset.id]
+            if (fallbackInfo) {
+              fallbackAggregated[asset.id] = fallbackInfo
+              fallbackFlags[asset.id] = true
+            }
+          })
+
+          setPrices(fallbackAggregated)
+          setAssetProviders(createAssetProviderState())
+          setProviderStatuses(createProviderStatusState('idle'))
+          const fallbackMessages = createProviderMessageState('참고용 데이터')
+          disabledProviders.forEach((provider) => {
+            fallbackMessages[provider] = 'API 키 미설정'
+          })
+          setProviderMessages(fallbackMessages)
+          setAssetFallbacks(fallbackFlags)
+          setStatus('idle')
+          setNotice(fallbackMarketNotice)
+          return
+        }
+
+        let fallbackInjected = false
+        assets.forEach((asset) => {
+          if (!(asset.id in aggregated)) {
+            const fallbackInfo = fallbackMarketPrices[asset.id]
+            if (fallbackInfo) {
+              aggregated[asset.id] = fallbackInfo
+              fallbackFlags[asset.id] = true
+              fallbackInjected = true
+            }
+          }
+        })
+
         setPrices(aggregated)
         setAssetProviders(resolvedProviders)
+        setAssetFallbacks(fallbackFlags)
         setProviderMessages((prev) => {
           const next = { ...prev }
           tasks.forEach(({ provider }) => {
@@ -289,11 +340,8 @@ const MarketOverview = () => {
           })
           return next
         })
-        setStatus(hasSuccess ? 'idle' : 'error')
-
-        if (!hasSuccess) {
-          return
-        }
+        setStatus('idle')
+        setNotice(fallbackInjected ? fallbackMarketPartialNotice : null)
       } catch (error) {
         console.error(error)
         if (!active) {
@@ -320,6 +368,8 @@ const MarketOverview = () => {
         })
         setPrices({})
         setAssetProviders(createAssetProviderState())
+        setAssetFallbacks(createAssetFallbackState())
+        setNotice(null)
       }
     }
 
@@ -374,10 +424,26 @@ const MarketOverview = () => {
     <section className="section" aria-labelledby="market-overview-heading">
       <div className="section-header">
         <div>
-          <h2 id="market-overview-heading">주요 지수 · 코인 실시간 차트</h2>
+          <h2 id="market-overview-heading" className="section-title">
+            <span className="section-title-icon markets" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false" role="img">
+                <path
+                  d="M4 5a1 1 0 0 0-1 1v12h14a1 1 0 1 1 0 2H3a1 1 0 0 1-1-1V6a3 3 0 0 1 3-3h14a1 1 0 1 1 0 2H5a1 1 0 0 0-1 1Zm3.75 8.25 2.1-2.8 2.35 3.13a1 1 0 0 0 1.56.03l3.66-4.17a1 1 0 1 0-1.5-1.32l-2.94 3.35-2.33-3.11a1 1 0 0 0-1.6.03l-2.1 2.8-1.04-1.3a1 1 0 1 0-1.54 1.26l1.8 2.25a1 1 0 0 0 1.58-.35Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </span>
+            <span className="section-title-text">주요 지수 · 코인 실시간 차트</span>
+          </h2>
           <span>15분 봉 기준으로 실시간 흐름과 가격 변동을 확인하세요.</span>
         </div>
       </div>
+
+      {notice && (
+        <div className="status-banner" role="status">
+          {notice}
+        </div>
+      )}
 
       <div className="market-top-row">
         <FearGreedIndex className="prominent" variant="us-market" />
@@ -393,15 +459,18 @@ const MarketOverview = () => {
           const resolvedProvider = assetProviders[asset.id]
           const fallbackProvider = resolvedProvider ?? asset.priceSources[0]?.provider
           const fallbackLabel = getFallbackLabel(fallbackProvider)
+          const isFallbackAsset = assetFallbacks[asset.id] ?? false
           const summaryPriceLabel =
             price !== null ? formatPrice(price, asset.formatOptions) : fallbackLabel
-          const summaryChangeLabel = changeLabel
-            ? changeLabel
-            : price !== null
-              ? resolvedProvider && fallbackLabel !== '데이터 없음'
-                ? fallbackLabel
-                : '데이터 없음'
+          const fallbackChangeText =
+            price !== null
+              ? isFallbackAsset
+                ? '참고용'
+                : resolvedProvider && fallbackLabel !== '데이터 없음'
+                  ? fallbackLabel
+                  : '데이터 없음'
               : fallbackLabel
+          const summaryChangeLabel = changeLabel ?? fallbackChangeText
           const summaryState =
             changePercent === null ? 'neutral' : changePercent >= 0 ? 'up' : 'down'
 
@@ -409,7 +478,10 @@ const MarketOverview = () => {
             <div className={`market-summary-item ${summaryState}`} key={asset.id}>
               <span className="market-summary-name">{asset.title}</span>
               <div className="market-summary-metrics">
-                <span className="market-summary-price">{summaryPriceLabel}</span>
+                <div className="price-with-tag">
+                  <span className="market-summary-price">{summaryPriceLabel}</span>
+                  {isFallbackAsset && <span className="data-fallback-tag">참고용</span>}
+                </div>
                 <span className="market-summary-change">{summaryChangeLabel}</span>
               </div>
             </div>
@@ -425,14 +497,17 @@ const MarketOverview = () => {
           const resolvedProvider = assetProviders[asset.id]
           const fallbackProvider = resolvedProvider ?? asset.priceSources[0]?.provider
           const fallbackLabel = getFallbackLabel(fallbackProvider)
+          const isFallbackAsset = assetFallbacks[asset.id] ?? false
           const changeClass = changePercent !== null ? (changePercent >= 0 ? 'change up' : 'change down') : 'change'
-          const fallbackChangeLabel = changeLabel
-            ? changeLabel
-            : price !== null
-              ? resolvedProvider && fallbackLabel !== '데이터 없음'
-                ? fallbackLabel
-                : '데이터 없음'
+          const fallbackChangeText =
+            price !== null
+              ? isFallbackAsset
+                ? '참고용'
+                : resolvedProvider && fallbackLabel !== '데이터 없음'
+                  ? fallbackLabel
+                  : '데이터 없음'
               : fallbackLabel
+          const fallbackChangeLabel = changeLabel ?? fallbackChangeText
 
           return (
             <article className="chart-card" key={asset.id}>
@@ -442,9 +517,12 @@ const MarketOverview = () => {
                   <p className="asset-subtitle">{asset.subtitle}</p>
                 </div>
                 <div className="price-row">
-                  <span>
-                    {price !== null ? formatPrice(price, asset.formatOptions) : fallbackLabel}
-                  </span>
+                  <div className="price-with-tag">
+                    <span>
+                      {price !== null ? formatPrice(price, asset.formatOptions) : fallbackLabel}
+                    </span>
+                    {isFallbackAsset && <span className="data-fallback-tag">참고용</span>}
+                  </div>
                   {changeLabel ? (
                     <span className={changeClass}>{changeLabel}</span>
                   ) : (

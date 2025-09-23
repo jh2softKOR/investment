@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
 import { fetchFmpQuotes, fetchUsdKrwFromExchangeRateHost, fetchWtiFromStooq } from '../utils/marketData'
+import {
+  fallbackExchangeNotice,
+  fallbackUsdKrw,
+  fallbackWti,
+} from '../utils/fallbackData'
 import type { PriceInfo } from '../utils/marketData'
 
 const wtiSymbol = 'CL=F' as const
@@ -32,6 +37,9 @@ const ExchangeRateTicker = () => {
   const [oil, setOil] = useState<PriceInfo | null>(null)
   const [rateStatus, setRateStatus] = useState<'idle' | 'loading' | 'error'>('loading')
   const [oilStatus, setOilStatus] = useState<'idle' | 'loading' | 'error'>('loading')
+  const [rateFallback, setRateFallback] = useState(false)
+  const [oilFallback, setOilFallback] = useState(false)
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null)
 
   const fmpApiKey = import.meta.env.VITE_FMP_KEY?.trim()
 
@@ -40,6 +48,18 @@ const ExchangeRateTicker = () => {
 
     const hasMeaningfulInfo = (info: PriceInfo | null) =>
       Boolean(info && (info.price !== null || info.changePercent !== null))
+
+    const applyRateFallback = () => {
+      setRate(fallbackUsdKrw)
+      setRateStatus('idle')
+      setRateFallback(true)
+    }
+
+    const applyOilFallback = () => {
+      setOil(fallbackWti)
+      setOilStatus('idle')
+      setOilFallback(true)
+    }
 
     const resolveRate = async (showLoading: boolean) => {
       if (!active) {
@@ -59,6 +79,7 @@ const ExchangeRateTicker = () => {
         if (hasMeaningfulInfo(info)) {
           setRate(info)
           setRateStatus('idle')
+          setRateFallback(false)
           return
         }
 
@@ -78,6 +99,7 @@ const ExchangeRateTicker = () => {
       }
 
       setRateStatus('error')
+      applyRateFallback()
     }
 
     const resolveOil = async (showLoading: boolean) => {
@@ -93,6 +115,7 @@ const ExchangeRateTicker = () => {
         if (hasMeaningfulInfo(info)) {
           setOil(info)
           setOilStatus('idle')
+          setOilFallback(false)
           return true
         }
 
@@ -125,8 +148,6 @@ const ExchangeRateTicker = () => {
         return
       }
 
-      setOilStatus('loading')
-
       try {
         const fallbackQuotes = await fetchFmpQuotes([wtiSymbol], fmpApiKey)
         if (!active) {
@@ -149,8 +170,11 @@ const ExchangeRateTicker = () => {
         return
       }
 
-      setOil(lastAttempt)
+      if (lastAttempt) {
+        setOil(lastAttempt)
+      }
       setOilStatus('error')
+      applyOilFallback()
     }
 
     const loadAll = async (showLoading: boolean) => {
@@ -168,10 +192,19 @@ const ExchangeRateTicker = () => {
     }
   }, [fmpApiKey])
 
+  useEffect(() => {
+    if (rateFallback || oilFallback) {
+      setFallbackNotice(fallbackExchangeNotice)
+    } else {
+      setFallbackNotice(null)
+    }
+  }, [oilFallback, rateFallback])
+
   const buildTickerView = (
     info: PriceInfo | null,
     status: 'idle' | 'loading' | 'error',
-    priceFormatter: (value: number | null | undefined) => string | null
+    priceFormatter: (value: number | null | undefined) => string | null,
+    options?: { fallbackLabel?: string | null; isFallback?: boolean }
   ) => {
     const priceLabel = priceFormatter(info?.price)
     const resolvedPriceLabel =
@@ -189,7 +222,11 @@ const ExchangeRateTicker = () => {
     const fallbackChangeLabel =
       status === 'loading' ? '불러오는 중' : status === 'error' ? '수신 실패' : '데이터 없음'
 
-    return { resolvedPriceLabel, changeLabel, changeClass, fallbackChangeLabel }
+    const hintLabel = options?.isFallback
+      ? options.fallbackLabel ?? '참고용'
+      : null
+
+    return { resolvedPriceLabel, changeLabel, changeClass, fallbackChangeLabel, hintLabel }
   }
 
   const oilFormatter = (value: number | null | undefined) => {
@@ -205,8 +242,14 @@ const ExchangeRateTicker = () => {
     }).format(value)
   }
 
-  const rateView = buildTickerView(rate, rateStatus, formatPrice)
-  const oilView = buildTickerView(oil, oilStatus, oilFormatter)
+  const rateView = buildTickerView(rate, rateStatus, formatPrice, {
+    isFallback: rateFallback,
+    fallbackLabel: '참고용',
+  })
+  const oilView = buildTickerView(oil, oilStatus, oilFormatter, {
+    isFallback: oilFallback,
+    fallbackLabel: '참고용',
+  })
 
   const containerState =
     rateStatus === 'loading' || oilStatus === 'loading'
@@ -228,6 +271,7 @@ const ExchangeRateTicker = () => {
         ) : (
           <span className={oilView.changeClass}>{oilView.fallbackChangeLabel}</span>
         )}
+        {oilView.hintLabel && <span className="exchange-rate-hint">{oilView.hintLabel}</span>}
         <span className="visually-hidden">CL=F · 1분 간격 자동 갱신</span>
       </div>
 
@@ -242,8 +286,10 @@ const ExchangeRateTicker = () => {
         ) : (
           <span className={rateView.changeClass}>{rateView.fallbackChangeLabel}</span>
         )}
+        {rateView.hintLabel && <span className="exchange-rate-hint">{rateView.hintLabel}</span>}
         <span className="visually-hidden">KRW=X · 1분 간격 자동 갱신</span>
       </div>
+      {fallbackNotice && <div className="exchange-rate-notice">{fallbackNotice}</div>}
     </div>
   )
 }
