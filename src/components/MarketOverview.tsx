@@ -2,7 +2,20 @@ import { useEffect, useMemo, useState } from 'react'
 import { fetchWithProxies } from '../utils/proxyFetch'
 import TradingViewChart from './TradingViewChart'
 
-type PriceProvider = 'yahoo' | 'binance' | 'gateio'
+const priceProviders = ['yahoo', 'binance', 'gateio', 'fmp'] as const
+type PriceProvider = (typeof priceProviders)[number]
+
+const createProviderStatusState = (initial: 'idle' | 'loading' | 'error' = 'loading') =>
+  Object.fromEntries(priceProviders.map((provider) => [provider, initial])) as Record<
+    PriceProvider,
+    'idle' | 'loading' | 'error'
+  >
+
+const createProviderMessageState = (initial: string | null = null) =>
+  Object.fromEntries(priceProviders.map((provider) => [provider, initial])) as Record<
+    PriceProvider,
+    string | null
+  >
 
 type AssetConfig = {
   id: string
@@ -28,7 +41,7 @@ const assets: AssetConfig[] = [
     title: '나스닥 종합지수',
     subtitle: '미국 기술주의 흐름을 가늠하는 대표 지수',
     chartSymbol: 'NASDAQ:IXIC',
-    priceSource: { provider: 'yahoo', symbol: '^IXIC' },
+    priceSource: { provider: 'fmp', symbol: '^IXIC' },
     formatOptions: { maximumFractionDigits: 2 },
     tags: ['미 증시', '인덱스'],
   },
@@ -37,7 +50,7 @@ const assets: AssetConfig[] = [
     title: '다우존스 산업평균',
     subtitle: '전통 우량주 중심의 벤치마크 지수',
     chartSymbol: 'DJI',
-    priceSource: { provider: 'yahoo', symbol: '^DJI' },
+    priceSource: { provider: 'fmp', symbol: '^DJI' },
     formatOptions: { maximumFractionDigits: 2 },
     tags: ['미 증시', '인덱스'],
   },
@@ -46,7 +59,7 @@ const assets: AssetConfig[] = [
     title: '비트코인 (BTC)',
     subtitle: '디지털 자산 시장의 방향성 지표',
     chartSymbol: 'BITSTAMP:BTCUSD',
-    priceSource: { provider: 'yahoo', symbol: 'BTC-USD' },
+    priceSource: { provider: 'binance', symbol: 'BTCUSDT' },
     formatOptions: { maximumFractionDigits: 0 },
     tags: ['코인', '주요 코인'],
   },
@@ -55,7 +68,7 @@ const assets: AssetConfig[] = [
     title: '이더리움 (ETH)',
     subtitle: '스마트 컨트랙트 생태계의 핵심 자산',
     chartSymbol: 'BITSTAMP:ETHUSD',
-    priceSource: { provider: 'yahoo', symbol: 'ETH-USD' },
+    priceSource: { provider: 'binance', symbol: 'ETHUSDT' },
     formatOptions: { maximumFractionDigits: 0 },
     tags: ['코인'],
   },
@@ -64,7 +77,7 @@ const assets: AssetConfig[] = [
     title: '리플 (XRP)',
     subtitle: '국경 간 송금 네트워크 기반 디지털 자산',
     chartSymbol: 'BITSTAMP:XRPUSD',
-    priceSource: { provider: 'yahoo', symbol: 'XRP-USD' },
+    priceSource: { provider: 'binance', symbol: 'XRPUSDT' },
     formatOptions: { maximumFractionDigits: 4 },
     tags: ['코인'],
   },
@@ -83,16 +96,36 @@ const baseFormatOptions: Intl.NumberFormatOptions = {
   maximumFractionDigits: 2,
 }
 
+const parseNumericValue = (value: unknown): number | null => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return null
+    }
+
+    const cleaned = trimmed.replace(/[,%()]/g, '')
+    if (!cleaned) {
+      return null
+    }
+
+    const parsed = Number.parseFloat(cleaned)
+    return Number.isNaN(parsed) ? null : parsed
+  }
+
+  return null
+}
+
 const MarketOverview = () => {
   const [prices, setPrices] = useState<Record<string, PriceInfo>>({})
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
-  const [providerStatuses, setProviderStatuses] = useState<
-    Record<PriceProvider, 'idle' | 'loading' | 'error'>
-  >({
-    yahoo: 'loading',
-    binance: 'loading',
-    gateio: 'loading',
-  })
+  const [providerStatuses, setProviderStatuses] = useState(() => createProviderStatusState('loading'))
+  const [providerMessages, setProviderMessages] = useState(() => createProviderMessageState())
+
+  const fmpApiKey = import.meta.env.VITE_FMP_KEY?.trim() ?? ''
 
   const yahooSymbols = useMemo(
     () => assets.filter((asset) => asset.priceSource?.provider === 'yahoo').map((asset) => asset.priceSource!.symbol),
@@ -109,6 +142,11 @@ const MarketOverview = () => {
     []
   )
 
+  const fmpSymbols = useMemo(
+    () => assets.filter((asset) => asset.priceSource?.provider === 'fmp').map((asset) => asset.priceSource!.symbol),
+    []
+  )
+
   useEffect(() => {
     let active = true
 
@@ -117,6 +155,7 @@ const MarketOverview = () => {
         provider: PriceProvider
         promise: Promise<Record<string, PriceInfo>>
       }> = []
+      const missingProviders: PriceProvider[] = []
 
       if (yahooSymbols.length) {
         tasks.push({ provider: 'yahoo', promise: fetchYahooQuotes(yahooSymbols) })
@@ -127,12 +166,29 @@ const MarketOverview = () => {
       if (gateIoSymbols.length) {
         tasks.push({ provider: 'gateio', promise: fetchGateIoQuotes(gateIoSymbols) })
       }
+      if (fmpSymbols.length) {
+        if (fmpApiKey) {
+          tasks.push({ provider: 'fmp', promise: fetchFmpQuotes(fmpSymbols, fmpApiKey) })
+        } else {
+          missingProviders.push('fmp')
+        }
+      }
 
       if (!tasks.length) {
         if (active) {
-          setStatus('idle')
+          setStatus(missingProviders.length ? 'error' : 'idle')
           setPrices({})
-          setProviderStatuses((prev) => ({ ...prev, yahoo: 'idle', binance: 'idle', gateio: 'idle' }))
+          const nextStatuses = createProviderStatusState('idle')
+          missingProviders.forEach((provider) => {
+            nextStatuses[provider] = 'error'
+          })
+          setProviderStatuses(nextStatuses)
+
+          const nextMessages = createProviderMessageState()
+          missingProviders.forEach((provider) => {
+            nextMessages[provider] = 'API 키 필요'
+          })
+          setProviderMessages(nextMessages)
         }
         return
       }
@@ -142,6 +198,19 @@ const MarketOverview = () => {
         const next = { ...prev }
         tasks.forEach(({ provider }) => {
           next[provider] = 'loading'
+        })
+        missingProviders.forEach((provider) => {
+          next[provider] = 'error'
+        })
+        return next
+      })
+      setProviderMessages((prev) => {
+        const next = { ...prev }
+        tasks.forEach(({ provider }) => {
+          next[provider] = null
+        })
+        missingProviders.forEach((provider) => {
+          next[provider] = 'API 키 필요'
         })
         return next
       })
@@ -155,6 +224,7 @@ const MarketOverview = () => {
 
         const providerResults: Partial<Record<PriceProvider, Record<string, PriceInfo>>> = {}
         const nextProviderStatuses: Partial<Record<PriceProvider, 'idle' | 'error'>> = {}
+        const providerErrorMessages: Partial<Record<PriceProvider, string | null>> = {}
         let hasSuccess = false
 
         settled.forEach((result, index) => {
@@ -162,14 +232,17 @@ const MarketOverview = () => {
           if (result.status === 'fulfilled') {
             providerResults[provider] = result.value
             nextProviderStatuses[provider] = 'idle'
+            providerErrorMessages[provider] = null
             hasSuccess = true
           } else {
             console.error(`Failed to load ${provider} quotes`, result.reason)
             nextProviderStatuses[provider] = 'error'
+            providerErrorMessages[provider] = '수신 실패'
           }
         })
 
         setProviderStatuses((prev) => ({ ...prev, ...nextProviderStatuses }))
+        setProviderMessages((prev) => ({ ...prev, ...providerErrorMessages }))
         setStatus(hasSuccess ? 'idle' : 'error')
 
         if (!hasSuccess) {
@@ -207,6 +280,13 @@ const MarketOverview = () => {
           })
           return next
         })
+        setProviderMessages((prev) => {
+          const next = { ...prev }
+          tasks.forEach(({ provider }) => {
+            next[provider] = '수신 실패'
+          })
+          return next
+        })
         setPrices({})
       }
     }
@@ -218,7 +298,7 @@ const MarketOverview = () => {
       active = false
       window.clearInterval(interval)
     }
-  }, [binanceSymbols, gateIoSymbols, yahooSymbols])
+  }, [binanceSymbols, fmpApiKey, fmpSymbols, gateIoSymbols, yahooSymbols])
 
   const formatPrice = (value: number | null, options?: Intl.NumberFormatOptions) => {
     if (value === null || value === undefined) {
@@ -241,6 +321,11 @@ const MarketOverview = () => {
   const getFallbackLabel = (provider?: PriceProvider) => {
     if (!provider) {
       return status === 'loading' ? '불러오는 중' : status === 'error' ? '수신 실패' : '데이터 없음'
+    }
+
+    const message = providerMessages[provider]
+    if (message) {
+      return message
     }
 
     const providerStatus = providerStatuses[provider]
@@ -329,6 +414,46 @@ const MarketOverview = () => {
   )
 }
 
+const fetchFmpQuotes = async (
+  symbols: string[],
+  apiKey: string
+): Promise<Record<string, PriceInfo>> => {
+  if (!symbols.length || !apiKey) {
+    return {}
+  }
+
+  const encodedSymbols = symbols.map((symbol) => encodeURIComponent(symbol))
+  const url = new URL(
+    `https://financialmodelingprep.com/api/v3/quote/${encodedSymbols.join(',')}`
+  )
+  url.searchParams.set('apikey', apiKey)
+
+  const response = await fetchWithProxies(url)
+  if (!response.ok) {
+    throw new Error('Financial Modeling Prep 시세 응답 오류')
+  }
+
+  const data = (await response.json()) as Array<{
+    symbol?: string
+    price?: number | string | null
+    changesPercentage?: number | string | null
+  }>
+
+  const mapped: Record<string, PriceInfo> = {}
+  data.forEach((item) => {
+    if (!item.symbol) {
+      return
+    }
+
+    mapped[item.symbol] = {
+      price: parseNumericValue(item.price),
+      changePercent: parseNumericValue(item.changesPercentage),
+    }
+  })
+
+  return mapped
+}
+
 const fetchYahooQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {
   if (!symbols.length) {
     return {}
@@ -367,8 +492,48 @@ const fetchBinanceQuotes = async (symbols: string[]): Promise<Record<string, Pri
 
   const url = new URL('https://api.binance.com/api/v3/ticker/24hr')
   url.searchParams.set('symbols', JSON.stringify(symbols))
+  const headers = { Accept: 'application/json, text/plain, */*' }
 
-  const response = await fetchWithProxies(url)
+  const mapTickers = (
+    entries: Array<{ symbol: string; lastPrice?: string; priceChangePercent?: string }>
+  ) => {
+    const toNumber = (input?: string) => {
+      if (!input) {
+        return null
+      }
+      const parsed = Number.parseFloat(input)
+      return Number.isNaN(parsed) ? null : parsed
+    }
+
+    const mapped: Record<string, PriceInfo> = {}
+    entries.forEach((item) => {
+      mapped[item.symbol] = {
+        price: toNumber(item.lastPrice),
+        changePercent: toNumber(item.priceChangePercent),
+      }
+    })
+    return mapped
+  }
+
+  try {
+    const directResponse = await fetch(url.toString(), {
+      headers,
+      credentials: 'omit',
+    })
+    if (directResponse.ok) {
+      const payload = (await directResponse.json()) as Array<{
+        symbol: string
+        lastPrice?: string
+        priceChangePercent?: string
+      }>
+      return mapTickers(payload)
+    }
+    console.warn(`Binance 직접 응답 상태 코드: ${directResponse.status}`)
+  } catch (error) {
+    console.warn('Binance 직접 요청 실패, 프록시로 재시도합니다.', error)
+  }
+
+  const response = await fetchWithProxies(url, { headers })
   if (!response.ok) {
     throw new Error('Binance 응답 오류')
   }
@@ -379,14 +544,7 @@ const fetchBinanceQuotes = async (symbols: string[]): Promise<Record<string, Pri
     priceChangePercent?: string
   }>
 
-  const mapped: Record<string, PriceInfo> = {}
-  data.forEach((item) => {
-    mapped[item.symbol] = {
-      price: item.lastPrice ? Number.parseFloat(item.lastPrice) : null,
-      changePercent: item.priceChangePercent ? Number.parseFloat(item.priceChangePercent) : null,
-    }
-  })
-  return mapped
+  return mapTickers(data)
 }
 
 const fetchGateIoQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {

@@ -14,7 +14,7 @@
 | 데이터 | 출처 |
 | --- | --- |
 | 경제 캘린더 | [Financial Modeling Prep](https://financialmodelingprep.com/developer/docs/economic-calendar-api) (Investing.com 캘린더 참고) |
-| 지수 가격 | [Yahoo Finance Quote API](https://query1.finance.yahoo.com/v7/finance/quote) |
+| 지수 가격 | [Financial Modeling Prep Quote API](https://financialmodelingprep.com/developer/docs/stock-market/real-time-stock-prices/) |
 | 코인 가격 | [Binance 24hr Ticker API](https://binance-docs.github.io/apidocs/spot/en/#24hr-ticker-price-change-statistics) |
 | 경제 뉴스 | [Alpha Vantage News Sentiment API](https://www.alphavantage.co/documentation/) |
 | 차트 위젯 | [TradingView Advanced Chart](https://www.tradingview.com/widget/advanced-chart/) |

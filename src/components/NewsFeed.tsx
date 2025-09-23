@@ -31,7 +31,48 @@ type FmpNewsItem = {
   id?: string | number
 }
 
+const relevantKeywordPatterns: RegExp[] = [
+  /미국\s*증시/i,
+  /미\s*증시/i,
+  /뉴욕\s*증시/i,
+  /미국\s*주식/i,
+  /월가/i,
+  /wall street/i,
+  /dow jones/i,
+  /nasdaq/i,
+  /nyse/i,
+  /s&p\s*500/i,
+  /s&p500/i,
+  /u\.?s\.?\s+(?:stock|stocks|market|markets)/i,
+  /us\s+(?:stock|stocks|market|markets)/i,
+  /비트코인/i,
+  /bitcoin/i,
+  /\bbtc\b/i,
+  /이더리움/i,
+  /ethereum/i,
+  /\beth\b/i,
+  /리플/i,
+  /\bxrp\b/i,
+  /암호화폐/i,
+  /crypto/i,
+  /cryptocurrency/i,
+  /코인/i,
+  /digital asset/i,
+  /blockchain/i,
+  /binance/i,
+  /coinbase/i,
+  /coindesk/i,
+  /cointelegraph/i,
+  /stablecoin/i,
+  /altcoin/i,
+]
+
 const stripHtml = (value: string) => value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+
+const isRelevantNewsItem = (item: NewsItem) => {
+  const haystack = [item.title, item.summary, item.source].filter(Boolean).join(' ')
+  return relevantKeywordPatterns.some((pattern) => pattern.test(haystack))
+}
 
 const parseAlphaVantagePublishedAt = (value?: string): Date | null => {
   if (!value) {
@@ -124,21 +165,21 @@ const NewsFeed = () => {
       if (fmpKey) {
         candidates.push({
           label: 'Financial Modeling Prep',
-          notice: 'Financial Modeling Prep 실시간 속보 API를 통해 제공됩니다.',
+          notice: 'Financial Modeling Prep 실시간 속보 API에서 미국 증시와 코인 뉴스를 선별했습니다.',
           loader: () => fetchFmpNews(fmpKey),
         })
       }
 
       candidates.push({
         label: 'Google 뉴스',
-        notice: 'Google 뉴스 Business RSS 피드를 통해 최신 소식을 제공합니다.',
+        notice: 'Google 뉴스 Business RSS에서 미국 증시와 코인 관련 기사를 선별했습니다.',
         loader: fetchGoogleNewsRss,
       })
 
       if (shouldUseAlpha && alphaVantageKey) {
         candidates.push({
           label: 'Alpha Vantage',
-          notice: 'Alpha Vantage 뉴스 API 기반 데이터입니다.',
+          notice: 'Alpha Vantage 뉴스 API에서 미국 증시 및 코인 이슈를 선별해 제공합니다.',
           loader: () => fetchAlphaVantageNews(alphaVantageKey),
         })
       }
@@ -202,8 +243,8 @@ const NewsFeed = () => {
     <section className="section" aria-labelledby="news-feed-heading">
       <div className="section-header">
         <div>
-          <h2 id="news-feed-heading">실시간 경제 속보</h2>
-          <span>중요도 높은 글로벌 경제 뉴스를 빠르게 확인하세요.</span>
+          <h2 id="news-feed-heading">실시간 미국 증시 · 코인 속보</h2>
+          <span>미국 증시와 주요 코인 관련 뉴스를 선별해 빠르게 전해드립니다.</span>
         </div>
       </div>
 
@@ -287,6 +328,7 @@ const fetchFmpNews = async (apiKey: string): Promise<NewsItem[]> => {
       }
     })
     .filter((item): item is NewsItem => Boolean(item))
+    .filter(isRelevantNewsItem)
     .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
 }
 
@@ -326,6 +368,7 @@ const fetchAlphaVantageNews = async (apiKey: string): Promise<NewsItem[]> => {
       }
     })
     .filter((item): item is NewsItem => Boolean(item))
+    .filter(isRelevantNewsItem)
     .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
 }
 
@@ -428,6 +471,7 @@ const parseGoogleNewsRss = (raw: string): NewsItem[] => {
       }
     })
     .filter((item): item is NewsItem => Boolean(item))
+    .filter(isRelevantNewsItem)
     .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
 }
 
