@@ -133,10 +133,9 @@ const fallbackTemplates: FallbackEventTemplate[] = [
   },
 ]
 
-const INVESTING_WIDGET_URL =
-  'https://sslecal2.investing.com/events_economic_calendar.php?importance=3&countries=5&columns=exc_importance,exc_actual,exc_forecast,exc_previous&calType=week&timeZone=55&lang=1'
+const INVESTING_CALENDAR_PAGE_URL = 'https://www.investing.com/economic-calendar/'
 const INVESTING_WIDGET_NOTICE =
-  'Investing.com 실시간 캘린더 위젯으로 미국(USD) 핵심 경제 이벤트를 바로 확인하세요.'
+  'Trading Economics API 연결이 원활하지 않아 기본 예시 데이터를 표시하고 있습니다. 최신 일정은 Investing.com 경제 캘린더에서 확인하세요.'
 
 const formatNumber = (value?: string | number | null) => {
   if (value === null || value === undefined) {
@@ -324,26 +323,31 @@ const combineBaseAndPath = (base: string, path: string) => {
   return `${base}${normalizedPath}`
 }
 
-const InvestingCalendarWidget = () => (
+const InvestingCalendarFallbackCard = () => (
   <div className="calendar-widget-card" aria-live="polite">
     <div>
-      <h3 className="calendar-widget-title">Investing.com 실시간 미국 주요 지표</h3>
+      <h3 className="calendar-widget-title">Investing.com 미국 주요 지표 바로가기</h3>
       <p className="calendar-widget-description">
-        Investing.com 위젯에서 중요도 '높음' 이벤트를 실시간으로 불러와 미국 달러 관련 핵심 일정을 제공합니다.
+        Investing.com 경제 캘린더에서 최신 발표 일정을 직접 확인하실 수 있습니다. 아래 링크는 새 탭에서 열립니다.
       </p>
     </div>
-    <div className="calendar-widget-frame">
-      <iframe
-        title="Investing.com 미국 중요 경제지표 캘린더"
-        src={INVESTING_WIDGET_URL}
-        loading="lazy"
-        frameBorder={0}
-        style={{ width: '100%', minHeight: '480px', border: '0' }}
-        aria-label="Investing.com 경제 캘린더 실시간 위젯"
-      />
+    <div className="calendar-widget-frame calendar-widget-frame--fallback" role="alert">
+      <p className="calendar-widget-fallback-message">
+        Investing.com에서 제공하던 실시간 위젯 경로가 더 이상 지원되지 않아 예시 데이터를 함께 안내해 드리고 있습니다. 자세한 일정은
+        공식 페이지에서 확인해 주세요.
+      </p>
+      <a
+        className="calendar-widget-fallback-link"
+        href={INVESTING_CALENDAR_PAGE_URL}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Investing.com 경제 캘린더 페이지 새 창에서 열기"
+      >
+        Investing.com 경제 캘린더 열기
+      </a>
     </div>
     <p className="calendar-widget-footnote">
-      데이터 제공: <a href="https://www.investing.com/economic-calendar/" target="_blank" rel="noreferrer">Investing.com</a>
+      데이터 제공: <a href={INVESTING_CALENDAR_PAGE_URL} target="_blank" rel="noreferrer">Investing.com</a>
     </p>
   </div>
 )
@@ -639,7 +643,7 @@ const EconomicCalendar = () => {
         </div>
       ) : widgetFallbackActive ? (
         <div className="calendar-combined-layout">
-          <InvestingCalendarWidget />
+          <InvestingCalendarFallbackCard />
           {calendarTable}
         </div>
       ) : (
