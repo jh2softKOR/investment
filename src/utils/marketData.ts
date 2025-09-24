@@ -152,6 +152,107 @@ const fetchUsdKrwFromFawazDataset = async (): Promise<PriceInfo | null> => {
   }
 }
 
+const buildStooqSymbolVariants = (symbol: string) => {
+  const trimmed = symbol.trim()
+  const variants: string[] = []
+  const pushUnique = (candidate: string | null | undefined) => {
+    if (!candidate) {
+      return
+    }
+    const normalized = candidate.trim()
+    if (!normalized) {
+      return
+    }
+    if (!variants.includes(normalized)) {
+      variants.push(normalized)
+    }
+  }
+
+  const lower = trimmed.toLowerCase()
+  pushUnique(trimmed)
+  pushUnique(lower)
+
+  if (trimmed.startsWith('^')) {
+    const withoutCaret = trimmed.slice(1)
+    const lowerWithoutCaret = lower.slice(1)
+    pushUnique(withoutCaret)
+    pushUnique(lowerWithoutCaret)
+    pushUnique(`${lowerWithoutCaret}.us`)
+  } else {
+    pushUnique(`${lower}.us`)
+  }
+
+  return variants
+}
+
+const parseStooqCsvPayload = (payload: string): PriceInfo | null => {
+  const trimmed = payload.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  const lines = trimmed.split(/\r?\n/).filter((line) => line.trim().length > 0)
+  if (lines.length < 2) {
+    return null
+  }
+
+  const header = lines[0].split(',').map((entry) => entry.trim().toLowerCase())
+  const closeIndex = header.findIndex((entry) => entry === 'close' || entry === 'c')
+  const resolvedCloseIndex = closeIndex >= 0 ? closeIndex : 4
+
+  const parseRow = (line: string) =>
+    line
+      .split(',')
+      .map((entry) => entry.trim())
+
+  const dataRows = lines.slice(1)
+  const latestRow = parseRow(dataRows[dataRows.length - 1])
+  const previousRow = dataRows.length > 1 ? parseRow(dataRows[dataRows.length - 2]) : null
+
+  if (resolvedCloseIndex >= latestRow.length) {
+    return null
+  }
+
+  const latestClose = parseNumericValue(latestRow[resolvedCloseIndex])
+  const previousClose =
+    previousRow && resolvedCloseIndex < previousRow.length
+      ? parseNumericValue(previousRow[resolvedCloseIndex])
+      : null
+
+  let changePercent: number | null = null
+  if (
+    latestClose !== null &&
+    previousClose !== null &&
+    previousClose !== 0 &&
+    Number.isFinite(previousClose)
+  ) {
+    changePercent = ((latestClose - previousClose) / previousClose) * 100
+  }
+
+  if (latestClose === null && changePercent === null) {
+    return null
+  }
+
+  return {
+    price: latestClose,
+    changePercent,
+  }
+}
+
+const requestStooqQuote = async (requestSymbol: string): Promise<PriceInfo | null> => {
+  const url = new URL('https://stooq.com/q/d/l/')
+  url.searchParams.set('s', requestSymbol)
+  url.searchParams.set('i', 'd')
+
+  const response = await fetchWithProxies(url)
+  if (!response.ok) {
+    throw new Error(`Stooq ${requestSymbol} 시세 응답 오류 (status: ${response.status})`)
+  }
+
+  const text = await response.text()
+  return parseStooqCsvPayload(text)
+}
+
 const fetchStooqQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {
   if (!symbols.length) {
     return {}
@@ -159,70 +260,28 @@ const fetchStooqQuotes = async (symbols: string[]): Promise<Record<string, Price
 
   const results = await Promise.all(
     symbols.map(async (symbol) => {
-      const url = new URL('https://stooq.com/q/d/l/')
-      url.searchParams.set('s', symbol)
-      url.searchParams.set('i', 'd')
+      const variants = buildStooqSymbolVariants(symbol)
+      let lastError: unknown = null
 
-      const response = await fetchWithProxies(url)
-      if (!response.ok) {
-        throw new Error(`Stooq ${symbol} 시세 응답 오류`)
+      for (const variant of variants) {
+        try {
+          const info = await requestStooqQuote(variant)
+          if (info) {
+            return { symbol, info }
+          }
+        } catch (error) {
+          lastError = error
+        }
       }
 
-      const text = await response.text()
-      const trimmed = text.trim()
-      if (!trimmed) {
-        return null
+      if (lastError) {
+        console.warn(
+          `Stooq ${symbol} 데이터 조회 실패, 시도한 심볼: ${variants.join(', ')}`,
+          lastError
+        )
       }
 
-      const lines = trimmed.split(/\r?\n/).filter((line) => line.trim().length > 0)
-      if (lines.length < 2) {
-        return null
-      }
-
-      const header = lines[0].split(',').map((entry) => entry.trim().toLowerCase())
-      const closeIndex = header.findIndex((entry) => entry === 'close' || entry === 'c')
-      const resolvedCloseIndex = closeIndex >= 0 ? closeIndex : 4
-
-      const parseRow = (line: string) =>
-        line
-          .split(',')
-          .map((entry) => entry.trim())
-
-      const dataRows = lines.slice(1)
-      const latestRow = parseRow(dataRows[dataRows.length - 1])
-      const previousRow = dataRows.length > 1 ? parseRow(dataRows[dataRows.length - 2]) : null
-
-      if (resolvedCloseIndex >= latestRow.length) {
-        return null
-      }
-
-      const latestClose = parseNumericValue(latestRow[resolvedCloseIndex])
-      const previousClose =
-        previousRow && resolvedCloseIndex < previousRow.length
-          ? parseNumericValue(previousRow[resolvedCloseIndex])
-          : null
-
-      let changePercent: number | null = null
-      if (
-        latestClose !== null &&
-        previousClose !== null &&
-        previousClose !== 0 &&
-        Number.isFinite(previousClose)
-      ) {
-        changePercent = ((latestClose - previousClose) / previousClose) * 100
-      }
-
-      if (latestClose === null && changePercent === null) {
-        return null
-      }
-
-      return {
-        symbol,
-        info: {
-          price: latestClose,
-          changePercent,
-        },
-      }
+      return null
     })
   )
 

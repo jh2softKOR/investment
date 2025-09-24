@@ -393,7 +393,7 @@ const MarketOverview = () => {
       active = false
       window.clearInterval(interval)
     }
-  }, [binanceSymbols, fmpApiKey, fmpSymbols, gateIoSymbols, stooqSymbols])
+  }, [binanceSymbols, fmpApiKey, fmpSymbols, gateIoSymbols, stooqSymbols, yahooSymbols])
 
   const formatPrice = (value: number | null, options?: Intl.NumberFormatOptions) => {
     if (value === null || value === undefined) {
