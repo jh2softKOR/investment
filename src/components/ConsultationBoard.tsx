@@ -61,6 +61,103 @@ const splitMessage = (message: string) =>
 const LOCAL_STORAGE_KEY = 'jh-consultation-board:records'
 const LOCAL_ONLY_ID_PREFIX = 'local-'
 const MAX_LOCAL_RECORDS = 50
+const MAX_DEBUG_SNIPPET_LENGTH = 240
+
+const buildConsultationApiBase = () => {
+  const raw = import.meta.env.VITE_CONSULTATION_API_BASE_URL?.trim()
+  if (!raw) {
+    return ''
+  }
+  return raw.replace(/\/+$/, '')
+}
+
+const resolveConsultationEndpoint = (base: string) => {
+  if (!base) {
+    return '/api/consultations'
+  }
+
+  if (/\/consultations$/i.test(base)) {
+    return base
+  }
+
+  if (/\/api$/i.test(base)) {
+    return `${base}/consultations`
+  }
+
+  return `${base}/api/consultations`
+}
+
+const appendQuery = (endpoint: string, params: Record<string, string>) => {
+  const search = new URLSearchParams(params)
+  if (!search.toString()) {
+    return endpoint
+  }
+  const separator = endpoint.includes('?') ? '&' : '?'
+  return `${endpoint}${separator}${search.toString()}`
+}
+
+const safeParseConsultationJson = async (response: Response) => {
+  const clone = response.clone()
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? ''
+
+  if (!contentType.includes('application/json')) {
+    const snippet = await clone
+      .text()
+      .then((text) => text.slice(0, MAX_DEBUG_SNIPPET_LENGTH))
+      .catch(() => '')
+    console.error('상담창구 응답이 JSON 형식이 아닙니다.', {
+      contentType: contentType || 'unknown',
+      preview: snippet,
+    })
+    throw new Error('상담창구 응답 형식이 올바르지 않습니다.')
+  }
+
+  try {
+    return (await response.json()) as unknown
+  } catch (parseError) {
+    const snippet = await clone
+      .text()
+      .then((text) => text.slice(0, MAX_DEBUG_SNIPPET_LENGTH))
+      .catch(() => '')
+    console.error('상담창구 JSON 응답 파싱 실패', parseError, {
+      preview: snippet,
+    })
+    throw new Error('상담창구 응답을 해석하는 중 문제가 발생했습니다.')
+  }
+}
+
+const extractConsultationList = (payload: unknown): ConsultationItem[] => {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('상담 내역 응답 형식이 올바르지 않습니다.')
+  }
+
+  const rawItems = (payload as { items?: unknown }).items
+  if (!Array.isArray(rawItems)) {
+    throw new Error('상담 내역 응답 형식이 올바르지 않습니다.')
+  }
+
+  const sanitized = prepareConsultations(rawItems)
+  if (rawItems.length > 0 && sanitized.length === 0) {
+    throw new Error('상담 내역 응답을 정리할 수 없습니다.')
+  }
+
+  return sanitized
+}
+
+const extractConsultationItem = (payload: unknown): ConsultationItem => {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('상담 요청 응답 형식이 올바르지 않습니다.')
+  }
+
+  const rawItem = (payload as { item?: unknown }).item
+  const sanitized = sanitizeStoredConsultation(rawItem)
+
+  if (!sanitized) {
+    throw new Error('상담 요청 응답을 확인할 수 없습니다.')
+  }
+
+  return sanitized
+}
 
 const sanitizeStoredConsultation = (entry: unknown): ConsultationItem | null => {
   if (!entry || typeof entry !== 'object') {
@@ -186,6 +283,10 @@ const ConsultationBoard = () => {
       : null,
   )
   const [lastSubmissionOffline, setLastSubmissionOffline] = useState(false)
+  const consultationApiEndpoint = useMemo(
+    () => resolveConsultationEndpoint(buildConsultationApiBase()),
+    [],
+  )
 
   const updateConsultations = useCallback(
     (updater: (current: ConsultationItem[]) => ConsultationItem[]) =>
@@ -202,15 +303,19 @@ const ConsultationBoard = () => {
       setError(null)
 
       try {
-        const response = await fetch('/api/consultations?limit=20', { signal })
-        const payload = await response.json().catch(() => null)
+        const requestUrl = appendQuery(consultationApiEndpoint, { limit: '20' })
+        const response = await fetch(requestUrl, { signal })
+        const payload = await safeParseConsultationJson(response)
 
         if (!response.ok) {
-          const message = payload && typeof payload.error === 'string' ? payload.error : null
+          const message =
+            payload && typeof (payload as { error?: unknown }).error === 'string'
+              ? ((payload as { error: string }).error)
+              : null
           throw new Error(message ?? '상담 내역을 불러오지 못했습니다.')
         }
 
-        const entries = Array.isArray(payload?.items) ? (payload.items as ConsultationItem[]) : []
+        const entries = extractConsultationList(payload)
         const stored = readStoredConsultations()
         const localOnly = stored.filter((entry) => entry.id.startsWith(LOCAL_ONLY_ID_PREFIX))
         updateConsultations(() => [...localOnly, ...entries])
@@ -238,7 +343,7 @@ const ConsultationBoard = () => {
         }
       }
     },
-    [updateConsultations],
+    [consultationApiEndpoint, updateConsultations],
   )
 
   useEffect(() => {
@@ -288,7 +393,7 @@ const ConsultationBoard = () => {
       setLastSubmissionOffline(false)
 
       try {
-        const response = await fetch('/api/consultations', {
+        const response = await fetch(consultationApiEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -300,10 +405,23 @@ const ConsultationBoard = () => {
           }),
         })
 
-        const payload = await response.json().catch(() => null)
+        let payload: unknown = null
+        try {
+          payload = await safeParseConsultationJson(response)
+        } catch (parseError) {
+          if (!response.ok) {
+            const error = new Error('상담 요청을 접수하지 못했습니다.') as Error & { status?: number }
+            error.status = response.status
+            throw error
+          }
+          throw parseError
+        }
 
         if (!response.ok) {
-          const messageFromServer = payload && typeof payload.error === 'string' ? payload.error : null
+          const messageFromServer =
+            payload && typeof (payload as { error?: unknown }).error === 'string'
+              ? ((payload as { error: string }).error)
+              : null
           const error = new Error(messageFromServer ?? '상담 요청을 접수하지 못했습니다.') as Error & {
             status?: number
           }
@@ -311,13 +429,11 @@ const ConsultationBoard = () => {
           throw error
         }
 
-        const savedItem = payload?.item as ConsultationItem | undefined
-        if (savedItem) {
-          updateConsultations((current) => {
-            const deduped = current.filter((entry) => entry.id !== savedItem.id)
-            return [savedItem, ...deduped]
-          })
-        }
+        const savedItem = extractConsultationItem(payload)
+        updateConsultations((current) => {
+          const deduped = current.filter((entry) => entry.id !== savedItem.id)
+          return [savedItem, ...deduped]
+        })
 
         setForm({ name: '', contact: '', message: '' })
         setSubmitState('success')
@@ -360,7 +476,14 @@ const ConsultationBoard = () => {
         setLocalNotice('네트워크 연결이 원활하지 않아 상담 내용을 이 기기에 임시 저장했습니다.')
       }
     },
-    [form.contact, form.message, form.name, submitState, updateConsultations]
+    [
+      consultationApiEndpoint,
+      form.contact,
+      form.message,
+      form.name,
+      submitState,
+      updateConsultations,
+    ]
   )
 
   useEffect(() => {

@@ -29,6 +29,8 @@ VITE_FMP_KEY=your_financial_modeling_prep_key
 VITE_ALPHA_VANTAGE_KEY=your_alpha_vantage_key
 # 백엔드 프록시 서버 주소를 직접 지정하고 싶다면 설정하세요 (예: http://localhost:4174)
 # VITE_CALENDAR_API_BASE_URL=
+# 상담창구 API 서버 기본 주소 (예: https://api.example.com 또는 https://api.example.com/api)
+# VITE_CONSULTATION_API_BASE_URL=
 # 모든 실시간 호출을 비활성화하려면 0으로 설정 (기본값은 활성화)
 # VITE_DEFAULT_LIVE_DATA=0
 # 특정 위젯만 비활성화하려면 아래 플래그 중 하나를 0 또는 off 등으로 설정합니다.

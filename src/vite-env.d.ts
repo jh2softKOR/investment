@@ -9,6 +9,7 @@ interface ImportMetaEnv {
   readonly VITE_ENABLE_LIVE_SENTIMENT_DATA?: string
   readonly VITE_ENABLE_LIVE_TICKER_DATA?: string
   readonly VITE_CALENDAR_API_BASE_URL?: string
+  readonly VITE_CONSULTATION_API_BASE_URL?: string
   readonly VITE_FMP_KEY?: string
   readonly VITE_MARKET_DATA_PROXY?: string
 }
