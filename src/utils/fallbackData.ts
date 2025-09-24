@@ -49,9 +49,6 @@ const fallbackMarketPrices: Record<string, PriceInfo> = {
 const fallbackMarketNotice =
   '실시간 시세 수신에 실패하여 최근 종가 기준 참고용 데이터를 표시합니다.'
 
-const fallbackMarketPartialNotice =
-  '일부 종목 시세는 최근 종가 기준 참고용 데이터입니다.'
-
 const fallbackExchangeNotice =
   '실시간 환율/유가 연결이 원활하지 않아 최근 종가 기준 참고용 데이터를 제공합니다.'
 
@@ -138,7 +135,6 @@ export {
   fallbackExchangeNotice,
   fallbackFearGreedNotice,
   fallbackMarketNotice,
-  fallbackMarketPartialNotice,
   fallbackMarketPrices,
   fallbackNewsNotice,
   fallbackGold,

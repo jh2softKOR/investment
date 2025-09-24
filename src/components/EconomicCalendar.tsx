@@ -366,7 +366,39 @@ const EconomicCalendar = () => {
 
       const response = await fetch(requestUrl, { signal: controller.signal })
       if (!response.ok) {
-        throw new Error('Trading Economics 캘린더 API 요청에 실패했습니다.')
+        const contentType = response.headers.get('content-type') ?? ''
+        let detail = ''
+        let rawText = ''
+        try {
+          rawText = (await response.clone().text()).trim()
+        } catch (parseError) {
+          console.warn('Trading Economics 캘린더 오류 응답 텍스트 수신 실패', parseError)
+        }
+
+        if (rawText) {
+          if (contentType.includes('application/json')) {
+            try {
+              const body = JSON.parse(rawText) as { error?: string } | null
+              if (body && typeof body.error === 'string' && body.error.trim()) {
+                detail = body.error.trim()
+              }
+            } catch (parseError) {
+              console.warn('Trading Economics 캘린더 오류 응답 JSON 파싱 실패', parseError)
+            }
+          }
+
+          if (!detail && rawText) {
+            detail = rawText
+          }
+        }
+
+        const statusSummary = [`${response.status}`]
+        if (response.statusText) {
+          statusSummary.push(response.statusText)
+        }
+        const summary = statusSummary.join(' ')
+        const message = detail ? `${summary}: ${detail}` : summary
+        throw new Error(`Trading Economics 캘린더 API 요청이 실패했습니다. (${message})`)
       }
 
       const data = (await response.json()) as CalendarApiResponse
@@ -414,7 +446,11 @@ const EconomicCalendar = () => {
       setEvents(createFallbackEvents(fallbackBase))
       setStatus('error')
       setCalendarMeta(null)
-      setNotice('Trading Economics API에 연결할 수 없어 대표적인 USD 지표 예시 데이터를 표시합니다.')
+      const reason = error instanceof Error ? error.message : '알 수 없는 오류'
+      const sanitizedReason = reason.replace(/\s+/g, ' ').trim() || '세부 오류 정보 없음'
+      setNotice(
+        `실시간 경제 캘린더 데이터를 불러오지 못했습니다. 백엔드 프록시 서버(npm run dev:server) 실행 여부와 Trading Economics API 키, 네트워크 연결 상태를 확인하세요. (오류: ${sanitizedReason})`,
+      )
       setLastUpdated(fallbackBase)
     })
 

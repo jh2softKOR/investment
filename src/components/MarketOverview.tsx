@@ -9,11 +9,7 @@ import {
   fetchStooqQuotes,
   fetchYahooQuotes,
 } from '../utils/marketData'
-import {
-  fallbackMarketNotice,
-  fallbackMarketPartialNotice,
-  fallbackMarketPrices,
-} from '../utils/fallbackData'
+import { fallbackMarketNotice, fallbackMarketPrices } from '../utils/fallbackData'
 import type { PriceInfo } from '../utils/marketData'
 import { shouldUseLiveMarketData } from '../utils/liveDataFlags'
 
@@ -340,14 +336,12 @@ const MarketOverview = () => {
           return
         }
 
-        let fallbackInjected = false
         assets.forEach((asset) => {
           if (!(asset.id in aggregated)) {
             const fallbackInfo = fallbackMarketPrices[asset.id]
             if (fallbackInfo) {
               aggregated[asset.id] = fallbackInfo
               fallbackFlags[asset.id] = true
-              fallbackInjected = true
             }
           }
         })
@@ -372,7 +366,7 @@ const MarketOverview = () => {
           return next
         })
         setStatus('idle')
-        setNotice(fallbackInjected ? fallbackMarketPartialNotice : null)
+        setNotice(null)
       } catch (error) {
         console.error(error)
         if (!active) {
