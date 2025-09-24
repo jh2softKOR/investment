@@ -5,6 +5,7 @@ import {
   fallbackFearGreedNotice,
   getFallbackFearGreedHistory,
 } from '../utils/fallbackData'
+import { shouldUseLiveSentimentData } from '../utils/liveDataFlags'
 
 type FearGreedEntry = {
   value: number
@@ -341,8 +342,17 @@ const FearGreedIndex = ({ className, variant = 'us-market' }: FearGreedIndexProp
   const [history, setHistory] = useState<FearGreedEntry[]>([])
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
   const [notice, setNotice] = useState<string | null>(null)
+  const useLiveSentiment = shouldUseLiveSentimentData()
 
   useEffect(() => {
+    if (!useLiveSentiment) {
+      const fallbackHistory = getFallbackFearGreedHistory(variant)
+      setHistory(fallbackHistory)
+      setStatus('idle')
+      setNotice(fallbackHistory.length ? fallbackFearGreedNotice : null)
+      return
+    }
+
     let active = true
 
     const loadHistory = async (showLoading = false) => {
@@ -401,7 +411,7 @@ const FearGreedIndex = ({ className, variant = 'us-market' }: FearGreedIndexProp
       active = false
       window.clearInterval(interval)
     }
-  }, [variant])
+  }, [useLiveSentiment, variant])
 
   const latestEntry = history[0] ?? null
   const previousEntry = history[1] ?? null

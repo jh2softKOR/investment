@@ -14,6 +14,7 @@ import {
   fallbackWti,
 } from '../utils/fallbackData'
 import type { PriceInfo } from '../utils/marketData'
+import { shouldUseLiveTickerData } from '../utils/liveDataFlags'
 
 const wtiSymbol = 'CL=F' as const
 const goldSymbol = 'GC=F' as const
@@ -60,8 +61,32 @@ const ExchangeRateTicker = () => {
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null)
 
   const fmpApiKey = import.meta.env.VITE_FMP_KEY?.trim()
+  const useLiveTickerData = shouldUseLiveTickerData()
 
   useEffect(() => {
+    if (!useLiveTickerData) {
+      setRate(fallbackUsdKrw)
+      setOil(fallbackWti)
+      setGold(fallbackGold)
+      setSilver(fallbackSilver)
+      setRateStatus('idle')
+      setOilStatus('idle')
+      setGoldStatus('idle')
+      setSilverStatus('idle')
+      setRateFallback(true)
+      setOilFallback(true)
+      setGoldFallback(true)
+      setSilverFallback(true)
+      setFallbackNotice(fallbackExchangeNotice)
+      return
+    }
+
+    setRateFallback(false)
+    setOilFallback(false)
+    setGoldFallback(false)
+    setSilverFallback(false)
+    setFallbackNotice(null)
+
     let active = true
 
     const hasMeaningfulInfo = (info: PriceInfo | null) =>
@@ -305,7 +330,7 @@ const ExchangeRateTicker = () => {
       active = false
       window.clearInterval(interval)
     }
-  }, [fmpApiKey])
+  }, [fmpApiKey, useLiveTickerData])
 
   useEffect(() => {
     if (rateFallback || oilFallback || goldFallback || silverFallback) {
