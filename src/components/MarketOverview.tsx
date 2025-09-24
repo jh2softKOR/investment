@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import FearGreedIndex from './FearGreedIndex'
 import YieldSpreadCard from './YieldSpreadCard'
 import TradingViewChart from './TradingViewChart'
-import { fetchBinanceQuotes, fetchFmpQuotes, fetchGateIoQuotes, fetchStooqQuotes } from '../utils/marketData'
+import {
+  fetchBinanceQuotes,
+  fetchFmpQuotes,
+  fetchGateIoQuotes,
+  fetchStooqQuotes,
+  fetchYahooQuotes,
+} from '../utils/marketData'
 import {
   fallbackMarketNotice,
   fallbackMarketPartialNotice,
@@ -10,7 +16,7 @@ import {
 } from '../utils/fallbackData'
 import type { PriceInfo } from '../utils/marketData'
 
-const priceProviders = ['stooq', 'binance', 'gateio', 'fmp'] as const
+const priceProviders = ['stooq', 'binance', 'gateio', 'fmp', 'yahoo'] as const
 type PriceProvider = (typeof priceProviders)[number]
 
 const createProviderStatusState = (initial: 'idle' | 'loading' | 'error' = 'loading') =>
@@ -30,6 +36,7 @@ const providerDisplayNames: Record<PriceProvider, string> = {
   binance: 'Binance',
   gateio: 'Gate.io',
   fmp: 'Financial Modeling Prep',
+  yahoo: 'Yahoo Finance',
 }
 
 type PriceSource = {
@@ -56,6 +63,7 @@ const assets: AssetConfig[] = [
     priceSources: [
       { provider: 'stooq', symbol: '^IXIC' },
       { provider: 'fmp', symbol: '^IXIC' },
+      { provider: 'yahoo', symbol: '^IXIC' },
     ],
     formatOptions: { maximumFractionDigits: 2 },
     tags: ['미 증시', '인덱스'],
@@ -68,6 +76,7 @@ const assets: AssetConfig[] = [
     priceSources: [
       { provider: 'stooq', symbol: '^DJI' },
       { provider: 'fmp', symbol: '^DJI' },
+      { provider: 'yahoo', symbol: '^DJI' },
     ],
     formatOptions: { maximumFractionDigits: 2 },
     tags: ['미 증시', '인덱스'],
@@ -150,6 +159,7 @@ const MarketOverview = () => {
   const gateIoSymbols = providerSymbols.gateio
   const fmpSymbols = providerSymbols.fmp
   const stooqSymbols = providerSymbols.stooq
+  const yahooSymbols = providerSymbols.yahoo
 
   useEffect(() => {
     let active = true
@@ -175,6 +185,9 @@ const MarketOverview = () => {
         } else {
           disabledProviders.push('fmp')
         }
+      }
+      if (yahooSymbols.length) {
+        tasks.push({ provider: 'yahoo', promise: fetchYahooQuotes(yahooSymbols) })
       }
 
       if (!tasks.length) {

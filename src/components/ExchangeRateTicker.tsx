@@ -1,13 +1,25 @@
-import { useEffect, useState } from 'react'
-import { fetchFmpQuotes, fetchUsdKrwFromExchangeRateHost, fetchWtiFromStooq } from '../utils/marketData'
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
+import {
+  fetchFmpQuotes,
+  fetchStooqQuotes,
+  fetchUsdKrwFromExchangeRateHost,
+  fetchWtiFromStooq,
+  fetchYahooQuotes,
+} from '../utils/marketData'
 import {
   fallbackExchangeNotice,
+  fallbackGold,
+  fallbackSilver,
   fallbackUsdKrw,
   fallbackWti,
 } from '../utils/fallbackData'
 import type { PriceInfo } from '../utils/marketData'
 
 const wtiSymbol = 'CL=F' as const
+const goldSymbol = 'GC=F' as const
+const silverSymbol = 'SI=F' as const
+const stooqGoldSymbol = 'gc.f' as const
+const stooqSilverSymbol = 'si.f' as const
 
 const formatPrice = (value: number | null | undefined) => {
   if (value === null || value === undefined) {
@@ -35,10 +47,16 @@ const formatChange = (value: number | null | undefined) => {
 const ExchangeRateTicker = () => {
   const [rate, setRate] = useState<PriceInfo | null>(null)
   const [oil, setOil] = useState<PriceInfo | null>(null)
+  const [gold, setGold] = useState<PriceInfo | null>(null)
+  const [silver, setSilver] = useState<PriceInfo | null>(null)
   const [rateStatus, setRateStatus] = useState<'idle' | 'loading' | 'error'>('loading')
   const [oilStatus, setOilStatus] = useState<'idle' | 'loading' | 'error'>('loading')
+  const [goldStatus, setGoldStatus] = useState<'idle' | 'loading' | 'error'>('loading')
+  const [silverStatus, setSilverStatus] = useState<'idle' | 'loading' | 'error'>('loading')
   const [rateFallback, setRateFallback] = useState(false)
   const [oilFallback, setOilFallback] = useState(false)
+  const [goldFallback, setGoldFallback] = useState(false)
+  const [silverFallback, setSilverFallback] = useState(false)
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null)
 
   const fmpApiKey = import.meta.env.VITE_FMP_KEY?.trim()
@@ -55,10 +73,13 @@ const ExchangeRateTicker = () => {
       setRateFallback(true)
     }
 
-    const applyOilFallback = () => {
-      setOil(fallbackWti)
-      setOilStatus('idle')
-      setOilFallback(true)
+    type CommodityConfig = {
+      label: string
+      fallbackInfo: PriceInfo
+      setInfo: Dispatch<SetStateAction<PriceInfo | null>>
+      setStatus: Dispatch<SetStateAction<'idle' | 'loading' | 'error'>>
+      setFallback: Dispatch<SetStateAction<boolean>>
+      fetchers: Array<{ name: string; loader: () => Promise<PriceInfo | null> }>
     }
 
     const resolveRate = async (showLoading: boolean) => {
@@ -102,20 +123,30 @@ const ExchangeRateTicker = () => {
       applyRateFallback()
     }
 
-    const resolveOil = async (showLoading: boolean) => {
+    const resolveCommodity = async (showLoading: boolean, config: CommodityConfig) => {
       if (!active) {
         return
       }
 
       if (showLoading) {
-        setOilStatus('loading')
+        config.setStatus('loading')
+      }
+
+      const applyCommodityFallback = () => {
+        config.setInfo(config.fallbackInfo)
+        config.setStatus('idle')
+        config.setFallback(true)
       }
 
       const updateIfValid = (info: PriceInfo | null) => {
+        if (!active) {
+          return false
+        }
+
         if (hasMeaningfulInfo(info)) {
-          setOil(info)
-          setOilStatus('idle')
-          setOilFallback(false)
+          config.setInfo(info)
+          config.setStatus('idle')
+          config.setFallback(false)
           return true
         }
 
@@ -124,46 +155,31 @@ const ExchangeRateTicker = () => {
 
       let lastAttempt: PriceInfo | null = null
 
-      try {
-        const stooqInfo = await fetchWtiFromStooq()
+      for (const fetcher of config.fetchers) {
+        let result: PriceInfo | null = null
+
+        try {
+          result = await fetcher.loader()
+        } catch (error) {
+          console.error(`${config.label} ${fetcher.name} 로딩 실패`, error)
+        }
+
         if (!active) {
           return
         }
 
-        lastAttempt = stooqInfo
-        if (updateIfValid(stooqInfo)) {
+        if (result) {
+          lastAttempt = result
+        }
+
+        if (updateIfValid(result)) {
           return
         }
 
-        if (stooqInfo) {
-          console.warn('Stooq 국제 유가 데이터가 충분하지 않습니다. 추가 소스를 시도합니다.')
-        } else {
-          console.warn('Stooq 국제 유가 데이터를 가져오지 못했습니다. 추가 소스를 시도합니다.')
-        }
-      } catch (error) {
-        console.error('Stooq 국제 유가 로딩 실패', error)
-      }
-
-      if (!active) {
-        return
-      }
-
-      try {
-        const fallbackQuotes = await fetchFmpQuotes([wtiSymbol], fmpApiKey)
-        if (!active) {
-          return
-        }
-
-        const fallbackInfo = fallbackQuotes[wtiSymbol] ?? null
-        lastAttempt = fallbackInfo ?? lastAttempt
-
-        if (updateIfValid(fallbackInfo)) {
-          return
-        }
-
-        console.warn('Financial Modeling Prep 국제 유가 데이터가 유효하지 않습니다.')
-      } catch (error) {
-        console.error('Financial Modeling Prep 국제 유가 로딩 실패', error)
+        const warningMessage = result
+          ? `${config.label} ${fetcher.name} 데이터가 충분하지 않습니다. 추가 소스를 시도합니다.`
+          : `${config.label} ${fetcher.name} 데이터를 가져오지 못했습니다. 추가 소스를 시도합니다.`
+        console.warn(warningMessage)
       }
 
       if (!active) {
@@ -171,14 +187,113 @@ const ExchangeRateTicker = () => {
       }
 
       if (lastAttempt) {
-        setOil(lastAttempt)
+        config.setInfo(lastAttempt)
       }
-      setOilStatus('error')
-      applyOilFallback()
+
+      config.setStatus('error')
+      applyCommodityFallback()
     }
 
+    const resolveOil = (showLoading: boolean) =>
+      resolveCommodity(showLoading, {
+        label: '국제 유가',
+        fallbackInfo: fallbackWti,
+        setInfo: setOil,
+        setStatus: setOilStatus,
+        setFallback: setOilFallback,
+        fetchers: [
+          {
+            name: 'Yahoo Finance',
+            loader: async () => {
+              const quotes = await fetchYahooQuotes([wtiSymbol])
+              return quotes[wtiSymbol] ?? null
+            },
+          },
+          {
+            name: 'Stooq',
+            loader: () => fetchWtiFromStooq(),
+          },
+          {
+            name: 'Financial Modeling Prep',
+            loader: async () => {
+              const quotes = await fetchFmpQuotes([wtiSymbol], fmpApiKey)
+              return quotes[wtiSymbol] ?? null
+            },
+          },
+        ],
+      })
+
+    const resolveGold = (showLoading: boolean) =>
+      resolveCommodity(showLoading, {
+        label: '국제 금',
+        fallbackInfo: fallbackGold,
+        setInfo: setGold,
+        setStatus: setGoldStatus,
+        setFallback: setGoldFallback,
+        fetchers: [
+          {
+            name: 'Yahoo Finance',
+            loader: async () => {
+              const quotes = await fetchYahooQuotes([goldSymbol])
+              return quotes[goldSymbol] ?? null
+            },
+          },
+          {
+            name: 'Stooq',
+            loader: async () => {
+              const quotes = await fetchStooqQuotes([stooqGoldSymbol])
+              return quotes[stooqGoldSymbol] ?? null
+            },
+          },
+          {
+            name: 'Financial Modeling Prep',
+            loader: async () => {
+              const quotes = await fetchFmpQuotes([goldSymbol], fmpApiKey)
+              return quotes[goldSymbol] ?? null
+            },
+          },
+        ],
+      })
+
+    const resolveSilver = (showLoading: boolean) =>
+      resolveCommodity(showLoading, {
+        label: '국제 은',
+        fallbackInfo: fallbackSilver,
+        setInfo: setSilver,
+        setStatus: setSilverStatus,
+        setFallback: setSilverFallback,
+        fetchers: [
+          {
+            name: 'Yahoo Finance',
+            loader: async () => {
+              const quotes = await fetchYahooQuotes([silverSymbol])
+              return quotes[silverSymbol] ?? null
+            },
+          },
+          {
+            name: 'Stooq',
+            loader: async () => {
+              const quotes = await fetchStooqQuotes([stooqSilverSymbol])
+              return quotes[stooqSilverSymbol] ?? null
+            },
+          },
+          {
+            name: 'Financial Modeling Prep',
+            loader: async () => {
+              const quotes = await fetchFmpQuotes([silverSymbol], fmpApiKey)
+              return quotes[silverSymbol] ?? null
+            },
+          },
+        ],
+      })
+
     const loadAll = async (showLoading: boolean) => {
-      await Promise.all([resolveRate(showLoading), resolveOil(showLoading)])
+      await Promise.all([
+        resolveRate(showLoading),
+        resolveOil(showLoading),
+        resolveGold(showLoading),
+        resolveSilver(showLoading),
+      ])
     }
 
     loadAll(true)
@@ -193,12 +308,12 @@ const ExchangeRateTicker = () => {
   }, [fmpApiKey])
 
   useEffect(() => {
-    if (rateFallback || oilFallback) {
+    if (rateFallback || oilFallback || goldFallback || silverFallback) {
       setFallbackNotice(fallbackExchangeNotice)
     } else {
       setFallbackNotice(null)
     }
-  }, [oilFallback, rateFallback])
+  }, [goldFallback, oilFallback, rateFallback, silverFallback])
 
   const buildTickerView = (
     info: PriceInfo | null,
@@ -246,20 +361,58 @@ const ExchangeRateTicker = () => {
     isFallback: rateFallback,
     fallbackLabel: '참고용',
   })
+  const goldView = buildTickerView(gold, goldStatus, oilFormatter, {
+    isFallback: goldFallback,
+    fallbackLabel: '참고용',
+  })
+  const silverView = buildTickerView(silver, silverStatus, oilFormatter, {
+    isFallback: silverFallback,
+    fallbackLabel: '참고용',
+  })
   const oilView = buildTickerView(oil, oilStatus, oilFormatter, {
     isFallback: oilFallback,
     fallbackLabel: '참고용',
   })
 
-  const containerState =
-    rateStatus === 'loading' || oilStatus === 'loading'
-      ? 'loading'
-      : rateStatus === 'error' && oilStatus === 'error'
-        ? 'error'
-        : 'idle'
+  const tickerStatuses = [rateStatus, oilStatus, goldStatus, silverStatus]
+  const containerState = tickerStatuses.some((status) => status === 'loading')
+    ? 'loading'
+    : tickerStatuses.every((status) => status === 'error')
+      ? 'error'
+      : 'idle'
 
   return (
     <div className="exchange-rate-ticker" aria-live="polite" data-state={containerState}>
+      <div className="exchange-rate-row">
+        <span className="exchange-rate-title">국제 금 (Gold)</span>
+        <span aria-hidden="true" className="exchange-rate-separator">
+          ·
+        </span>
+        <span className="exchange-rate-value">{goldView.resolvedPriceLabel}</span>
+        {goldView.changeLabel ? (
+          <span className={goldView.changeClass}>{goldView.changeLabel}</span>
+        ) : (
+          <span className={goldView.changeClass}>{goldView.fallbackChangeLabel}</span>
+        )}
+        {goldView.hintLabel && <span className="exchange-rate-hint">{goldView.hintLabel}</span>}
+        <span className="visually-hidden">GC=F · 1분 간격 자동 갱신</span>
+      </div>
+
+      <div className="exchange-rate-row">
+        <span className="exchange-rate-title">국제 은 (Silver)</span>
+        <span aria-hidden="true" className="exchange-rate-separator">
+          ·
+        </span>
+        <span className="exchange-rate-value">{silverView.resolvedPriceLabel}</span>
+        {silverView.changeLabel ? (
+          <span className={silverView.changeClass}>{silverView.changeLabel}</span>
+        ) : (
+          <span className={silverView.changeClass}>{silverView.fallbackChangeLabel}</span>
+        )}
+        {silverView.hintLabel && <span className="exchange-rate-hint">{silverView.hintLabel}</span>}
+        <span className="visually-hidden">SI=F · 1분 간격 자동 갱신</span>
+      </div>
+
       <div className="exchange-rate-row">
         <span className="exchange-rate-title">국제 유가 (WTI)</span>
         <span aria-hidden="true" className="exchange-rate-separator">

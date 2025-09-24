@@ -27,6 +27,16 @@ const fallbackWti: PriceInfo = {
   changePercent: 0.73,
 }
 
+const fallbackGold: PriceInfo = {
+  price: 2368.45,
+  changePercent: 0.58,
+}
+
+const fallbackSilver: PriceInfo = {
+  price: 28.42,
+  changePercent: -0.21,
+}
+
 const fallbackMarketPrices: Record<string, PriceInfo> = {
   nasdaq: { price: 15882.35, changePercent: 0.65 },
   dow: { price: 38650.12, changePercent: 0.42 },
@@ -131,6 +141,8 @@ export {
   fallbackMarketPartialNotice,
   fallbackMarketPrices,
   fallbackNewsNotice,
+  fallbackGold,
+  fallbackSilver,
   fallbackUsdKrw,
   fallbackWti,
   getFallbackFearGreedHistory,
