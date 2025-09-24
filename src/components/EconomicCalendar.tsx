@@ -1,7 +1,10 @@
+
 import { useEffect, useMemo, useState } from 'react'
 import { shouldUseLiveCalendarData } from '../utils/liveDataFlags'
 
 type ViewMode = 'daily' | 'weekly'
+type ScopeFilter = 'upcoming' | 'previous'
+type ImportanceFilter = 'all' | 'high' | 'medium' | 'low'
 
 type EconomicEvent = {
   id: string
@@ -11,47 +14,49 @@ type EconomicEvent = {
   actual?: string
   previous?: string
   forecast?: string
+  category?: string | null
 }
 
-type ApiEconomicEvent = {
-  id?: string
-  event?: string
-  title?: string
-  country?: string
-  currency?: string
-  importance?: string
-  impact?: string
-  actual?: string | number | null
-  previous?: string | number | null
-  estimate?: string | number | null
-  consensus?: string | number | null
-  forecast?: string | number | null
-  date?: string
-}
-
-type ForexFactoryEvent = {
-  id?: string | number
-  title?: string
-  country?: string
-  currency?: string
-  impact?: string
+type CalendarApiEvent = {
+  id?: string | null
+  title?: string | null
+  category?: string | null
+  datetime?: string | null
+  importance?: string | null
+  importanceValue?: number | null
   actual?: string | number | null
   previous?: string | number | null
   forecast?: string | number | null
-  estimate?: string | number | null
-  consensus?: string | number | null
-  date?: string
-  time?: string
-  timestamp?: string | number
-  datetime?: string
 }
 
-type ForexFactoryResponse =
-  | ForexFactoryEvent[]
-  | {
-      rows?: ForexFactoryEvent[][]
-      events?: ForexFactoryEvent[]
-    }
+type CalendarApiMeta = {
+  source?: string | null
+  country?: string | null
+  scope?: string | null
+  startDate?: string | null
+  endDate?: string | null
+  windowDays?: number | null
+  importanceLevels?: number[] | null
+  importanceLabels?: string[] | null
+  requestedAt?: string | null
+  cache?: { hit?: boolean | null; ttlSeconds?: number | null } | null
+}
+
+type CalendarApiResponse = {
+  meta?: CalendarApiMeta | null
+  events?: CalendarApiEvent[] | null
+}
+
+type CalendarMetaState = {
+  sourceLabel: string
+  scope: 'upcoming' | 'previous' | 'range' | 'custom'
+  startDate: string | null
+  endDate: string | null
+  importanceLabels: string[]
+  requestedAt: Date | null
+  cacheHit: boolean
+  windowDays: number | null
+}
 
 type FallbackEventTemplate = {
   id: string
@@ -64,14 +69,6 @@ type FallbackEventTemplate = {
   forecast?: string
   previous?: string
 }
-
-const FMP_ENDPOINT = 'https://financialmodelingprep.com/api/v3/economic_calendar'
-const FOREX_FACTORY_ENDPOINT = 'https://cdn-nfs.faireconomy.media/ff_calendar_thisweek.json'
-const FOREX_FACTORY_PROXY_ENDPOINTS = [
-  'https://r.jina.ai/https://cdn-nfs.faireconomy.media/ff_calendar_thisweek.json',
-  'https://r.jina.ai/https://nfs.faireconomy.media/ff_calendar_thisweek.json',
-  'https://r.jina.ai/http://cdn-nfs.faireconomy.media/ff_calendar_thisweek.json',
-]
 
 const fallbackTemplates: FallbackEventTemplate[] = [
   {
@@ -155,8 +152,20 @@ const formatNumber = (value?: string | number | null) => {
   return cleaned
 }
 
-const normalizeImpact = (impact?: string): EconomicEvent['impact'] => {
-  const lowered = (impact ?? '').toLowerCase()
+const mapImpactFromApi = (event: CalendarApiEvent): EconomicEvent['impact'] => {
+  if (typeof event.importanceValue === 'number') {
+    if (event.importanceValue >= 3) {
+      return 'High'
+    }
+    if (event.importanceValue === 2) {
+      return 'Medium'
+    }
+    if (event.importanceValue === 1) {
+      return 'Low'
+    }
+  }
+
+  const lowered = (event.importance ?? '').toLowerCase()
   if (lowered.includes('high') || lowered.includes('높')) {
     return 'High'
   }
@@ -172,162 +181,18 @@ const normalizeImpact = (impact?: string): EconomicEvent['impact'] => {
   return 'None'
 }
 
-const formatDate = (date: Date) => {
-  return new Intl.DateTimeFormat('ko-KR', {
+const formatDate = (date: Date) =>
+  new Intl.DateTimeFormat('ko-KR', {
     month: '2-digit',
     day: '2-digit',
     weekday: 'short',
   }).format(date)
-}
 
 const formatTime = (date: Date) =>
   new Intl.DateTimeFormat('ko-KR', {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date)
-
-const getRange = () => {
-  const today = new Date()
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-  const end = new Date(start)
-  end.setDate(start.getDate() + 6)
-
-  const format = (value: Date) => value.toISOString().slice(0, 10)
-  return { start: format(start), end: format(end) }
-}
-
-const toMilliseconds = (timestamp?: number | string | null) => {
-  if (timestamp === null || timestamp === undefined) {
-    return undefined
-  }
-
-  const numeric = typeof timestamp === 'string' ? Number(timestamp) : timestamp
-  if (!Number.isFinite(numeric)) {
-    return undefined
-  }
-
-  return numeric > 1e12 ? numeric : numeric * 1000
-}
-
-const parseForexFactoryDate = (event: ForexFactoryEvent) => {
-  const fromTimestamp = toMilliseconds(event.timestamp)
-  if (fromTimestamp) {
-    const fromEpoch = new Date(fromTimestamp)
-    if (!Number.isNaN(fromEpoch.getTime())) {
-      return fromEpoch
-    }
-  }
-
-  const direct = event.datetime ?? event.date
-  if (direct) {
-    const parsed = new Date(direct)
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed
-    }
-  }
-
-  if (event.date) {
-    const baseYear = new Date().getFullYear()
-    const combined = `${event.date} ${baseYear} ${event.time ?? '00:00'}`
-    const parsed = new Date(combined)
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed
-    }
-  }
-
-  return undefined
-}
-
-const mapForexFactoryEvents = (data: ForexFactoryEvent[]): EconomicEvent[] => {
-  const mapped: EconomicEvent[] = []
-
-  for (const item of data) {
-    const country = (item.country ?? item.currency ?? '').toString().toLowerCase()
-    if (!(country.includes('united states') || country.includes('us') || country.includes('usd'))) {
-      continue
-    }
-
-    const parsedDate = parseForexFactoryDate(item)
-    if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
-      continue
-    }
-
-    mapped.push({
-      id: `forex-${item.id ?? `${item.title}-${parsedDate.toISOString()}`}`,
-      title: item.title ?? '미정 지표',
-      datetime: parsedDate,
-      impact: normalizeImpact(item.impact),
-      actual: formatNumber(item.actual),
-      previous: formatNumber(item.previous),
-      forecast: formatNumber(item.forecast ?? item.estimate ?? item.consensus),
-    })
-  }
-
-  return mapped.sort((a, b) => a.datetime.getTime() - b.datetime.getTime())
-}
-
-const flattenForexFactoryResponse = (rawData: ForexFactoryResponse): ForexFactoryEvent[] => {
-  if (Array.isArray(rawData)) {
-    return rawData
-  }
-
-  const candidates: ForexFactoryEvent[] = []
-  if (Array.isArray(rawData.events)) {
-    candidates.push(...rawData.events)
-  }
-  if (Array.isArray(rawData.rows)) {
-    for (const row of rawData.rows) {
-      if (Array.isArray(row)) {
-        candidates.push(...row)
-      }
-    }
-  }
-
-  return candidates
-}
-
-const loadForexFactoryEvents = async (signal: AbortSignal) => {
-  const sources = [FOREX_FACTORY_ENDPOINT, ...FOREX_FACTORY_PROXY_ENDPOINTS]
-  for (const source of sources) {
-    try {
-      if (signal.aborted) {
-        return { events: [] as EconomicEvent[], notice: null as string | null }
-      }
-
-      const response = await fetch(source, {
-        signal,
-        headers: {
-          Accept: 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        console.warn(`ForexFactory 응답이 올바르지 않습니다. (${source})`)
-        continue
-      }
-
-      const rawData: ForexFactoryResponse = await response.json()
-      const flattened = mapForexFactoryEvents(flattenForexFactoryResponse(rawData))
-
-      if (flattened.length > 0) {
-        const usedProxy = source !== FOREX_FACTORY_ENDPOINT
-        const notice = usedProxy
-          ? 'ForexFactory 공개 캘린더 미러 데이터를 통해 일정을 표시하고 있습니다.'
-          : 'ForexFactory 공개 캘린더 데이터를 기반으로 일정을 표시하고 있습니다.'
-
-        return { events: flattened, notice }
-      }
-    } catch (error) {
-      if ((error as Error).name === 'AbortError') {
-        return { events: [] as EconomicEvent[], notice: null as string | null }
-      }
-
-      console.error(`ForexFactory 데이터 로딩 실패 (${source})`, error)
-    }
-  }
-
-  return { events: [] as EconomicEvent[], notice: null as string | null }
-}
 
 const createFallbackEvents = (base: Date) => {
   const utcStart = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()))
@@ -349,13 +214,127 @@ const createFallbackEvents = (base: Date) => {
   })
 }
 
+const toScopeLabel = (scope: CalendarMetaState['scope']) => {
+  if (scope === 'previous') {
+    return '발표 완료'
+  }
+  if (scope === 'range') {
+    return '기간 지정'
+  }
+  if (scope === 'custom') {
+    return '사용자 지정'
+  }
+  return '발표 예정'
+}
+
+const toImportanceLabel = (label: string) => {
+  const lowered = label.toLowerCase()
+  if (lowered.includes('high')) {
+    return '높음'
+  }
+  if (lowered.includes('medium')) {
+    return '보통'
+  }
+  if (lowered.includes('low')) {
+    return '낮음'
+  }
+  return '정보'
+}
+
+const normalizeMeta = (
+  meta: CalendarApiMeta | null,
+  fallbackScope: ScopeFilter,
+  windowDays: number,
+): CalendarMetaState => {
+  const normalizedScopeRaw = (meta?.scope ?? fallbackScope).toString().toLowerCase()
+  const normalizedScope: CalendarMetaState['scope'] = ['previous', 'range', 'custom'].includes(normalizedScopeRaw)
+    ? (normalizedScopeRaw as CalendarMetaState['scope'])
+    : 'upcoming'
+
+  const requestedAt = meta?.requestedAt ? new Date(meta.requestedAt) : new Date()
+  const validRequestedAt = Number.isNaN(requestedAt.getTime()) ? null : requestedAt
+
+  const importanceLabels =
+    meta?.importanceLabels && meta.importanceLabels.length > 0
+      ? meta.importanceLabels
+      : ['High', 'Medium', 'Low']
+
+  return {
+    sourceLabel: meta?.source?.trim() || 'Trading Economics',
+    scope: normalizedScope === 'upcoming' ? fallbackScope : normalizedScope,
+    startDate: meta?.startDate ?? null,
+    endDate: meta?.endDate ?? null,
+    importanceLabels,
+    requestedAt: validRequestedAt,
+    cacheHit: Boolean(meta?.cache?.hit),
+    windowDays: meta?.windowDays ?? windowDays,
+  }
+}
+
+const formatNotice = (meta: CalendarMetaState | null) => {
+  if (!meta) {
+    return null
+  }
+
+  const rangeText = (() => {
+    if (meta.startDate && meta.endDate) {
+      if (meta.startDate === meta.endDate) {
+        return meta.startDate
+      }
+      return `${meta.startDate} ~ ${meta.endDate}`
+    }
+    return '날짜 범위 미지정'
+  })()
+
+  const importanceText = meta.importanceLabels.length > 0
+    ? meta.importanceLabels.map(toImportanceLabel).join(', ')
+    : '전체'
+
+  const parts = [
+    `${meta.sourceLabel} API (${toScopeLabel(meta.scope)})`,
+    `조회 기간 ${rangeText}`,
+    `중요도 ${importanceText}`,
+  ]
+
+  if (meta.cacheHit) {
+    parts.push('캐시 데이터 사용')
+  }
+
+  return parts.join(' · ')
+}
+
+const buildApiBase = () => {
+  const raw = import.meta.env.VITE_CALENDAR_API_BASE_URL?.trim()
+  if (!raw) {
+    return ''
+  }
+  return raw.replace(/\/+$/, '')
+}
+
+const combineBaseAndPath = (base: string, path: string) => {
+  if (!base) {
+    return path
+  }
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${base}${normalizedPath}`
+}
+
 const EconomicCalendar = () => {
-  const [viewMode, setViewMode] = useState<ViewMode>('daily')
+  const [viewMode, setViewMode] = useState<ViewMode>('weekly')
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('upcoming')
+  const [importanceFilter, setImportanceFilter] = useState<ImportanceFilter>('high')
   const [events, setEvents] = useState<EconomicEvent[]>([])
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [calendarMeta, setCalendarMeta] = useState<CalendarMetaState | null>(null)
   const useLiveCalendar = shouldUseLiveCalendarData()
+  const calendarApiBase = useMemo(buildApiBase, [])
+
+  const todayKey = useMemo(() => {
+    const now = new Date()
+    return now.toISOString().slice(0, 10)
+  }, [])
 
   useEffect(() => {
     if (!useLiveCalendar) {
@@ -363,124 +342,97 @@ const EconomicCalendar = () => {
       setEvents(createFallbackEvents(fallbackBase))
       setStatus('idle')
       setLastUpdated(fallbackBase)
+      setCalendarMeta(null)
       setNotice('실시간 경제 캘린더 API 사용이 비활성화되어 대표적인 USD 지표 예시 데이터를 표시합니다.')
       return
     }
 
     const controller = new AbortController()
 
-    const loadEconomicEvents = async () => {
+    const loadTradingEconomicsCalendar = async () => {
       setStatus('loading')
       setNotice(null)
-      const { start, end } = getRange()
-      const apiKey = import.meta.env.VITE_FMP_KEY?.trim()
-      const shouldUseFmp = apiKey && apiKey.toLowerCase() !== 'demo'
-      const loadStartedAt = new Date()
 
-      let loadedEvents: EconomicEvent[] = []
-      let loadedNotice: string | null = null
-
-      if (shouldUseFmp) {
-        try {
-          const url = new URL(FMP_ENDPOINT)
-          url.searchParams.set('from', start)
-          url.searchParams.set('to', end)
-          url.searchParams.set('apikey', apiKey)
-
-          const response = await fetch(url, { signal: controller.signal })
-          if (!response.ok) {
-            throw new Error('Financial Modeling Prep 응답이 올바르지 않습니다.')
-          }
-
-          const rawData: ApiEconomicEvent[] = await response.json()
-          const filtered = (rawData || [])
-            .filter((item) => {
-              const country = (item.country ?? '').toLowerCase()
-              const currency = (item.currency ?? '').toLowerCase()
-              return country.includes('united states') || country.includes('us') || currency.includes('usd')
-            })
-            .map((item) => {
-              const dateString = item.date ?? ''
-              const normalizedDate = dateString.replace(' ', 'T')
-              const parsedDate = new Date(normalizedDate)
-
-              return {
-                id: item.id ?? `${item.event}-${dateString}-${Math.random()}`,
-                title: item.event ?? item.title ?? '미정 지표',
-                datetime: parsedDate,
-                impact: normalizeImpact(item.importance ?? item.impact),
-                actual: formatNumber(item.actual),
-                previous: formatNumber(item.previous),
-                forecast: formatNumber(item.forecast ?? item.estimate ?? item.consensus),
-              }
-            })
-            .filter((event) => !Number.isNaN(event.datetime.getTime()))
-            .sort((a, b) => a.datetime.getTime() - b.datetime.getTime())
-
-          if (controller.signal.aborted) {
-            return
-          }
-
-          if (filtered.length > 0) {
-            loadedEvents = filtered
-          }
-        } catch (error) {
-          if ((error as Error).name !== 'AbortError') {
-            console.error(error)
-          }
-        }
+      const windowDays = viewMode === 'weekly' ? 7 : 1
+      const params = new URLSearchParams()
+      params.set('scope', scopeFilter)
+      params.set('window', windowDays.toString())
+      if (importanceFilter !== 'all') {
+        params.set('importance', importanceFilter)
       }
 
-      if (loadedEvents.length === 0) {
-        const forexResult = await loadForexFactoryEvents(controller.signal)
-        if (controller.signal.aborted) {
-          return
+      const endpoint = combineBaseAndPath(calendarApiBase, '/api/trading-economics/calendar')
+      const requestUrl = `${endpoint}?${params.toString()}`
+
+      const response = await fetch(requestUrl, { signal: controller.signal })
+      if (!response.ok) {
+        throw new Error('Trading Economics 캘린더 API 요청에 실패했습니다.')
+      }
+
+      const data = (await response.json()) as CalendarApiResponse
+      const rawEvents = Array.isArray(data.events) ? data.events : []
+      const normalizedEvents: EconomicEvent[] = []
+
+      for (const item of rawEvents) {
+        if (!item || !item.datetime) {
+          continue
+        }
+        const parsedDate = new Date(item.datetime)
+        if (Number.isNaN(parsedDate.getTime())) {
+          continue
         }
 
-        if (forexResult.events.length > 0) {
-          loadedEvents = forexResult.events
-          loadedNotice = forexResult.notice
-        }
+        normalizedEvents.push({
+          id: item.id ?? `${item.title ?? '미정 지표'}-${item.datetime}`,
+          title: item.title ?? '미정 지표',
+          datetime: parsedDate,
+          impact: mapImpactFromApi(item),
+          actual: formatNumber(item.actual),
+          previous: formatNumber(item.previous),
+          forecast: formatNumber(item.forecast),
+          category: item.category ?? null,
+        })
       }
 
-      if (loadedEvents.length === 0) {
-        loadedEvents = createFallbackEvents(loadStartedAt)
-        loadedNotice = '실시간 경제 캘린더 API에 연결할 수 없어 대표적인 USD 지표 예시 데이터를 표시합니다.'
-      }
+      normalizedEvents.sort((a, b) => a.datetime.getTime() - b.datetime.getTime())
 
-      if (controller.signal.aborted) {
-        return
-      }
+      const metaState = normalizeMeta(data.meta ?? null, scopeFilter, windowDays)
 
-      setEvents(loadedEvents)
+      setEvents(normalizedEvents)
       setStatus('idle')
-      setLastUpdated(loadStartedAt)
-      setNotice(loadedNotice)
+      setCalendarMeta(metaState)
+      setNotice(formatNotice(metaState))
+      setLastUpdated(metaState.requestedAt ?? new Date())
     }
 
-    loadEconomicEvents().catch((error) => {
+    loadTradingEconomicsCalendar().catch((error) => {
       if ((error as Error).name === 'AbortError') {
         return
       }
-      console.error(error)
+      console.error('Trading Economics 캘린더 데이터를 불러오지 못했습니다.', error)
+      const fallbackBase = new Date()
+      setEvents(createFallbackEvents(fallbackBase))
       setStatus('error')
+      setCalendarMeta(null)
+      setNotice('Trading Economics API에 연결할 수 없어 대표적인 USD 지표 예시 데이터를 표시합니다.')
+      setLastUpdated(fallbackBase)
     })
 
     return () => controller.abort()
-  }, [useLiveCalendar])
-
-  const todayKey = useMemo(() => {
-    const now = new Date()
-    return now.toISOString().slice(0, 10)
-  }, [])
+  }, [calendarApiBase, importanceFilter, scopeFilter, useLiveCalendar, viewMode])
 
   const filteredEvents = useMemo(() => {
     if (viewMode === 'weekly') {
       return events
     }
 
+    if (calendarMeta) {
+      const targetKey = scopeFilter === 'previous' ? calendarMeta.endDate ?? todayKey : calendarMeta.startDate ?? todayKey
+      return events.filter((event) => event.datetime.toISOString().slice(0, 10) === targetKey)
+    }
+
     return events.filter((event) => event.datetime.toISOString().slice(0, 10) === todayKey)
-  }, [events, todayKey, viewMode])
+  }, [calendarMeta, events, scopeFilter, todayKey, viewMode])
 
   const renderImpact = (impact: EconomicEvent['impact']) => {
     if (impact === 'None' || impact === 'Holiday') {
@@ -511,27 +463,73 @@ const EconomicCalendar = () => {
             </span>
             <span className="section-title-text">USD 주요 경제 지표 캘린더</span>
           </h2>
-          <span>Investing.com의 달력을 참고한 미국 달러 핵심 이벤트를 모았습니다.</span>
+          <span>Trading Economics 데이터를 기반으로 미국 달러 핵심 이벤트를 확인하세요.</span>
         </div>
-        <div className="segmented-control" role="tablist" aria-label="기간 선택">
-          {(['daily', 'weekly'] as ViewMode[]).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              className={mode === viewMode ? 'active' : ''}
-              onClick={() => setViewMode(mode)}
-              role="tab"
-              aria-selected={mode === viewMode}
-            >
-              {mode === 'daily' ? '일간 지표' : '주간 보기'}
-            </button>
-          ))}
+        <div className="calendar-controls" role="group" aria-label="경제 캘린더 보기 옵션">
+          <div className="segmented-control" role="tablist" aria-label="기간 선택">
+            {(['daily', 'weekly'] as ViewMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={mode === viewMode ? 'active' : ''}
+                onClick={() => setViewMode(mode)}
+                role="tab"
+                aria-selected={mode === viewMode}
+              >
+                {mode === 'daily' ? '일간 지표' : '주간 보기'}
+              </button>
+            ))}
+          </div>
+          <div className="calendar-filter">
+            <span className="calendar-filter-label" aria-hidden="true">
+              범위
+            </span>
+            <div className="segmented-control" role="tablist" aria-label="이벤트 범위 선택">
+              {(['upcoming', 'previous'] as ScopeFilter[]).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className={option === scopeFilter ? 'active' : ''}
+                  onClick={() => setScopeFilter(option)}
+                  role="tab"
+                  aria-selected={option === scopeFilter}
+                >
+                  {option === 'upcoming' ? '예정' : '발표됨'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="calendar-filter">
+            <span className="calendar-filter-label" aria-hidden="true">
+              중요도
+            </span>
+            <div className="segmented-control importance" role="tablist" aria-label="중요도 필터">
+              {(['all', 'high', 'medium', 'low'] as ImportanceFilter[]).map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  className={level === importanceFilter ? 'active' : ''}
+                  onClick={() => setImportanceFilter(level)}
+                  role="tab"
+                  aria-selected={level === importanceFilter}
+                >
+                  {level === 'all'
+                    ? '전체'
+                    : level === 'high'
+                      ? '높음'
+                      : level === 'medium'
+                        ? '보통'
+                        : '낮음'}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
       {status === 'error' && (
         <div className="status-banner" role="alert">
-          경제 지표를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.
+          경제 지표를 불러오는 중 문제가 발생하여 예시 데이터를 표시합니다. 잠시 후 다시 시도해주세요.
         </div>
       )}
 
@@ -581,8 +579,13 @@ const EconomicCalendar = () => {
       )}
 
       <p className="helper-text">
-        Investing.com 경제 캘린더를 참고하여 미국 달러(USD)에 영향을 미치는 주요 이벤트만 정리했습니다.
-        {lastUpdated && ` 마지막 갱신: ${new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit' }).format(lastUpdated)} 기준`}
+        Trading Economics API를 통해 미국(USD)에 영향을 주는 주요 이벤트를 불러옵니다. 상단 필터로 예정/발표
+        상태와 중요도를 조정할 수 있습니다.
+        {lastUpdated &&
+          ` 마지막 갱신: ${new Intl.DateTimeFormat('ko-KR', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }).format(lastUpdated)} 기준`}
       </p>
     </section>
   )
