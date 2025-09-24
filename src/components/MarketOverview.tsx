@@ -15,6 +15,7 @@ import {
   fallbackMarketPrices,
 } from '../utils/fallbackData'
 import type { PriceInfo } from '../utils/marketData'
+import { shouldUseLiveMarketData } from '../utils/liveDataFlags'
 
 const priceProviders = ['stooq', 'binance', 'gateio', 'fmp', 'yahoo'] as const
 type PriceProvider = (typeof priceProviders)[number]
@@ -139,6 +140,7 @@ const MarketOverview = () => {
   const [notice, setNotice] = useState<string | null>(null)
 
   const fmpApiKey = import.meta.env.VITE_FMP_KEY?.trim() ?? ''
+  const useLiveMarketData = shouldUseLiveMarketData()
 
   const providerSymbols = useMemo(() => {
     const symbolSets = Object.fromEntries(
@@ -162,6 +164,22 @@ const MarketOverview = () => {
   const yahooSymbols = providerSymbols.yahoo
 
   useEffect(() => {
+    if (!useLiveMarketData) {
+      setStatus('idle')
+      setPrices(fallbackMarketPrices)
+      setNotice(fallbackMarketNotice)
+      setProviderStatuses(createProviderStatusState('idle'))
+      const disabledMessages = createProviderMessageState('실시간 수신 비활성화')
+      setProviderMessages(disabledMessages)
+      setAssetProviders(createAssetProviderState())
+      const fallbackFlags = createAssetFallbackState()
+      Object.keys(fallbackFlags).forEach((key) => {
+        fallbackFlags[key] = true
+      })
+      setAssetFallbacks(fallbackFlags)
+      return
+    }
+
     let active = true
 
     const loadPrices = async () => {
@@ -393,7 +411,15 @@ const MarketOverview = () => {
       active = false
       window.clearInterval(interval)
     }
-  }, [binanceSymbols, fmpApiKey, fmpSymbols, gateIoSymbols, stooqSymbols, yahooSymbols])
+  }, [
+    binanceSymbols,
+    fmpApiKey,
+    fmpSymbols,
+    gateIoSymbols,
+    stooqSymbols,
+    useLiveMarketData,
+    yahooSymbols,
+  ])
 
   const formatPrice = (value: number | null, options?: Intl.NumberFormatOptions) => {
     if (value === null || value === undefined) {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchWithProxies } from '../utils/proxyFetch'
 import { fallbackNewsNotice, getFallbackNews } from '../utils/fallbackData'
+import { shouldUseLiveNewsData } from '../utils/liveDataFlags'
 
 type NewsItem = {
   id: string
@@ -155,8 +156,17 @@ const NewsFeed = () => {
   const [news, setNews] = useState<NewsItem[]>([])
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
   const [notice, setNotice] = useState<string | null>(null)
+  const useLiveNews = shouldUseLiveNewsData()
 
   useEffect(() => {
+    if (!useLiveNews) {
+      const fallbackItems = getFallbackNews()
+      setNews(fallbackItems)
+      setStatus('idle')
+      setNotice(fallbackNewsNotice)
+      return
+    }
+
     let active = true
 
     const loadNews = async () => {
@@ -256,7 +266,7 @@ const NewsFeed = () => {
       active = false
       window.clearInterval(interval)
     }
-  }, [])
+  }, [useLiveNews])
 
   return (
     <section className="section" aria-labelledby="news-feed-heading">

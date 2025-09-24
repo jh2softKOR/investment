@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { shouldUseLiveCalendarData } from '../utils/liveDataFlags'
 
 type ViewMode = 'daily' | 'weekly'
 
@@ -354,8 +355,18 @@ const EconomicCalendar = () => {
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const useLiveCalendar = shouldUseLiveCalendarData()
 
   useEffect(() => {
+    if (!useLiveCalendar) {
+      const fallbackBase = new Date()
+      setEvents(createFallbackEvents(fallbackBase))
+      setStatus('idle')
+      setLastUpdated(fallbackBase)
+      setNotice('실시간 경제 캘린더 API 사용이 비활성화되어 대표적인 USD 지표 예시 데이터를 표시합니다.')
+      return
+    }
+
     const controller = new AbortController()
 
     const loadEconomicEvents = async () => {
@@ -456,7 +467,7 @@ const EconomicCalendar = () => {
     })
 
     return () => controller.abort()
-  }, [])
+  }, [useLiveCalendar])
 
   const todayKey = useMemo(() => {
     const now = new Date()
