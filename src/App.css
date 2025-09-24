@@ -123,6 +123,10 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: flex-start;
   }
+
+  .exchange-rate-ticker {
+    align-self: center;
+  }
 }
 
 @media (max-width: 767px) {

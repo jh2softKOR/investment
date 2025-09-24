@@ -22,7 +22,14 @@ const parseBooleanFlag = (raw: string | undefined | null): boolean | null => {
   return null
 }
 
-const defaultLiveFallback = !import.meta.env.DEV
+const defaultLiveFallback = (() => {
+  const explicitDefault = parseBooleanFlag(import.meta.env.VITE_DEFAULT_LIVE_DATA)
+  if (explicitDefault !== null) {
+    return explicitDefault
+  }
+
+  return true
+})()
 
 const resolveLiveDataFlag = (raw: string | undefined, fallback: boolean): boolean => {
   const parsed = parseBooleanFlag(raw)
