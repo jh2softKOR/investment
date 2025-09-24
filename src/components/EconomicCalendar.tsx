@@ -133,6 +133,11 @@ const fallbackTemplates: FallbackEventTemplate[] = [
   },
 ]
 
+const INVESTING_WIDGET_URL =
+  'https://sslecal2.investing.com/events_economic_calendar.php?importance=3&countries=5&columns=exc_importance,exc_actual,exc_forecast,exc_previous&calType=week&timeZone=55&lang=1'
+const INVESTING_WIDGET_NOTICE =
+  'Investing.com 실시간 캘린더 위젯으로 미국(USD) 핵심 경제 이벤트를 바로 확인하세요.'
+
 const formatNumber = (value?: string | number | null) => {
   if (value === null || value === undefined) {
     return undefined
@@ -319,15 +324,40 @@ const combineBaseAndPath = (base: string, path: string) => {
   return `${base}${normalizedPath}`
 }
 
+const InvestingCalendarWidget = () => (
+  <div className="calendar-widget-card" aria-live="polite">
+    <div>
+      <h3 className="calendar-widget-title">Investing.com 실시간 미국 주요 지표</h3>
+      <p className="calendar-widget-description">
+        Investing.com 위젯에서 중요도 '높음' 이벤트를 실시간으로 불러와 미국 달러 관련 핵심 일정을 제공합니다.
+      </p>
+    </div>
+    <div className="calendar-widget-frame">
+      <iframe
+        title="Investing.com 미국 중요 경제지표 캘린더"
+        src={INVESTING_WIDGET_URL}
+        loading="lazy"
+        frameBorder={0}
+        style={{ width: '100%', minHeight: '480px', border: '0' }}
+        aria-label="Investing.com 경제 캘린더 실시간 위젯"
+      />
+    </div>
+    <p className="calendar-widget-footnote">
+      데이터 제공: <a href="https://www.investing.com/economic-calendar/" target="_blank" rel="noreferrer">Investing.com</a>
+    </p>
+  </div>
+)
+
 const EconomicCalendar = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('weekly')
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('upcoming')
   const [importanceFilter, setImportanceFilter] = useState<ImportanceFilter>('high')
   const [events, setEvents] = useState<EconomicEvent[]>([])
-  const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
+  const [status, setStatus] = useState<'idle' | 'loading'>('loading')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [calendarMeta, setCalendarMeta] = useState<CalendarMetaState | null>(null)
+  const [widgetFallbackActive, setWidgetFallbackActive] = useState(false)
   const useLiveCalendar = shouldUseLiveCalendarData()
   const calendarApiBase = useMemo(buildApiBase, [])
 
@@ -343,7 +373,8 @@ const EconomicCalendar = () => {
       setStatus('idle')
       setLastUpdated(fallbackBase)
       setCalendarMeta(null)
-      setNotice('실시간 경제 캘린더 API 사용이 비활성화되어 대표적인 USD 지표 예시 데이터를 표시합니다.')
+      setNotice(INVESTING_WIDGET_NOTICE)
+      setWidgetFallbackActive(true)
       return
     }
 
@@ -352,6 +383,7 @@ const EconomicCalendar = () => {
     const loadTradingEconomicsCalendar = async () => {
       setStatus('loading')
       setNotice(null)
+      setWidgetFallbackActive(false)
 
       const windowDays = viewMode === 'weekly' ? 7 : 1
       const params = new URLSearchParams()
@@ -444,13 +476,10 @@ const EconomicCalendar = () => {
       console.error('Trading Economics 캘린더 데이터를 불러오지 못했습니다.', error)
       const fallbackBase = new Date()
       setEvents(createFallbackEvents(fallbackBase))
-      setStatus('error')
+      setStatus('idle')
       setCalendarMeta(null)
-      const reason = error instanceof Error ? error.message : '알 수 없는 오류'
-      const sanitizedReason = reason.replace(/\s+/g, ' ').trim() || '세부 오류 정보 없음'
-      setNotice(
-        `실시간 경제 캘린더 데이터를 불러오지 못했습니다. 백엔드 프록시 서버(npm run dev:server) 실행 여부와 Trading Economics API 키, 네트워크 연결 상태를 확인하세요. (오류: ${sanitizedReason})`,
-      )
+      setNotice(INVESTING_WIDGET_NOTICE)
+      setWidgetFallbackActive(true)
       setLastUpdated(fallbackBase)
     })
 
@@ -483,6 +512,47 @@ const EconomicCalendar = () => {
 
     return <span className={`impact-chip ${impactClass}`}>{label}</span>
   }
+
+  const calendarTable = (
+    <div className="calendar-data-panel">
+      {notice && (
+        <div className="status-banner" role="status">
+          {notice}
+        </div>
+      )}
+      {filteredEvents.length > 0 ? (
+        <table className="calendar-table">
+          <thead>
+            <tr>
+              <th scope="col">일시</th>
+              <th scope="col">지표</th>
+              <th scope="col">발표치</th>
+              <th scope="col">예상치</th>
+              <th scope="col">이전치</th>
+              <th scope="col">영향도</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredEvents.map((event) => (
+              <tr key={event.id}>
+                <td>
+                  <div>{formatDate(event.datetime)}</div>
+                  <div>{formatTime(event.datetime)}</div>
+                </td>
+                <td>{event.title}</td>
+                <td>{event.actual ?? '-'}</td>
+                <td>{event.forecast ?? '-'}</td>
+                <td>{event.previous ?? '-'}</td>
+                <td>{renderImpact(event.impact)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div className="table-empty">표시할 이벤트가 없습니다. 휴일일 가능성이 있습니다.</div>
+      )}
+    </div>
+  )
 
   return (
     <section className="section" aria-labelledby="economic-calendar-heading">
@@ -567,50 +637,19 @@ const EconomicCalendar = () => {
         <div className="status-banner" role="status">
           경제 캘린더 데이터를 불러오는 중입니다...
         </div>
-      ) : (
-        <div>
-          {notice && (
-            <div className="status-banner" role="status">
-              {notice}
-            </div>
-          )}
-          {filteredEvents.length > 0 ? (
-            <table className="calendar-table">
-              <thead>
-                <tr>
-                  <th scope="col">일시</th>
-                  <th scope="col">지표</th>
-                  <th scope="col">발표치</th>
-                  <th scope="col">예상치</th>
-                  <th scope="col">이전치</th>
-                  <th scope="col">영향도</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredEvents.map((event) => (
-                  <tr key={event.id}>
-                    <td>
-                      <div>{formatDate(event.datetime)}</div>
-                      <div>{formatTime(event.datetime)}</div>
-                    </td>
-                    <td>{event.title}</td>
-                    <td>{event.actual ?? '-'}</td>
-                    <td>{event.forecast ?? '-'}</td>
-                    <td>{event.previous ?? '-'}</td>
-                    <td>{renderImpact(event.impact)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="table-empty">표시할 이벤트가 없습니다. 휴일일 가능성이 있습니다.</div>
-          )}
+      ) : widgetFallbackActive ? (
+        <div className="calendar-combined-layout">
+          <InvestingCalendarWidget />
+          {calendarTable}
         </div>
+      ) : (
+        calendarTable
       )}
 
       <p className="helper-text">
-        Trading Economics API를 통해 미국(USD)에 영향을 주는 주요 이벤트를 불러옵니다. 상단 필터로 예정/발표
-        상태와 중요도를 조정할 수 있습니다.
+        {widgetFallbackActive
+          ? 'Investing.com 위젯과 내부 예시 데이터를 함께 제공하여 미국 달러 핵심 이벤트 흐름을 빠르게 파악할 수 있습니다.'
+          : 'Trading Economics API를 통해 미국(USD)에 영향을 주는 주요 이벤트를 불러옵니다. 상단 필터로 예정/발표 상태와 중요도를 조정할 수 있습니다.'}
         {lastUpdated &&
           ` 마지막 갱신: ${new Intl.DateTimeFormat('ko-KR', {
             hour: '2-digit',
