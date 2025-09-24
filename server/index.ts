@@ -1,6 +1,7 @@
 import cors from 'cors'
 import express from 'express'
 import calendarRouter from './calendarRouter'
+import consultationRouter from './consultationRouter'
 
 const app = express()
 
@@ -21,6 +22,7 @@ app.get('/healthz', (_, res) => {
 })
 
 app.use('/api/trading-economics/calendar', calendarRouter)
+app.use('/api/consultations', consultationRouter)
 
 const port = Number.parseInt(process.env.PORT ?? process.env.SERVER_PORT ?? '4174', 10)
 

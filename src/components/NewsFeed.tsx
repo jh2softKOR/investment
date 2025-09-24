@@ -462,7 +462,9 @@ const fetchGoogleNewsRss = async (): Promise<NewsItem[]> => {
   return []
 }
 
-const parseGoogleNewsRss = (raw: string): NewsItem[] => {
+const stripCdata = (value: string) => value.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, '$1')
+
+const parseGoogleNewsRssWithDomParser = (raw: string): NewsItem[] => {
   if (typeof DOMParser === 'undefined') {
     throw new Error('RSS 파서를 초기화할 수 없습니다.')
   }
@@ -512,6 +514,79 @@ const parseGoogleNewsRss = (raw: string): NewsItem[] => {
     .filter((item): item is NewsItem => Boolean(item))
     .filter(isRelevantNewsItem)
     .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
+}
+
+const extractRssTagContent = (block: string, tag: string) => {
+  const regex = new RegExp(String.raw`<${tag}[^>]*>([\s\S]*?)</${tag}>`, 'i')
+  const match = block.match(regex)
+  if (!match) {
+    return ''
+  }
+
+  return stripCdata(match[1]).trim()
+}
+
+const parseGoogleNewsRssFallback = (raw: string): NewsItem[] => {
+  try {
+    const matches = raw.match(/<item\b[\s\S]*?<\/item>/gi)
+    if (!matches) {
+      return []
+    }
+
+    const items: NewsItem[] = []
+
+    matches.forEach((block, index) => {
+      const title = extractRssTagContent(block, 'title')
+      const linkRaw = extractRssTagContent(block, 'link')
+      const description = extractRssTagContent(block, 'description')
+      const sourceLabel = extractRssTagContent(block, 'source')
+      const guid = extractRssTagContent(block, 'guid')
+      const publishedAt = parseRssPublishedAt(extractRssTagContent(block, 'pubDate') || undefined)
+
+      const normalizedTitle = decodeBasicHtmlEntities(title)
+      const normalizedLink = decodeBasicHtmlEntities(linkRaw)
+      let source = decodeBasicHtmlEntities(sourceLabel)
+
+      if (!normalizedTitle || !normalizedLink || !publishedAt) {
+        return
+      }
+
+      if (!source) {
+        try {
+          const derived = new URL(normalizedLink)
+          source = derived.hostname.replace(/^www\./, '')
+        } catch (error) {
+          console.warn('뉴스 출처 정보를 파싱하지 못했습니다.', error)
+          source = '출처 미확인'
+        }
+      }
+
+      const id = guid || `${normalizedLink}-${index}`
+
+      items.push({
+        id,
+        title: normalizedTitle,
+        summary: stripHtml(description),
+        url: normalizedLink,
+        source,
+        publishedAt,
+      })
+    })
+
+    return items.filter(isRelevantNewsItem).sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
+  } catch (error) {
+    console.error('Google 뉴스 RSS 대체 파싱에 실패했습니다.', error)
+    return []
+  }
+}
+
+const parseGoogleNewsRss = (raw: string): NewsItem[] => {
+  try {
+    return parseGoogleNewsRssWithDomParser(raw)
+  } catch (error) {
+    console.warn('DOMParser를 사용할 수 없어 RSS를 대체 파서로 처리합니다.', error)
+    return parseGoogleNewsRssFallback(raw)
+  }
 }
 
 export default NewsFeed
