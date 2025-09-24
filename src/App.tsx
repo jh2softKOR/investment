@@ -11,8 +11,7 @@ function App() {
         <header className="hero">
           <h1>JH Investment Lab</h1>
           <p>
-            개인 투자자에게 꼭 필요한 달러 경제 지표, 글로벌 증시 및 코인 시세, 그리고 실시간 경제 뉴스를 한눈에
-            확인하세요.
+            개인 투자자의 성공 투자를 위한 맞춤형 포탈 입니다. 전문가 상의가 필요하면 엔서니와 상의하세요.
           </p>
           <div className="hero-bottom-row">
             <div className="badge-row">

@@ -34,6 +34,20 @@ type ExchangeRateHostResponse = {
   base?: string
 }
 
+type YahooQuoteEntry = {
+  symbol?: string
+  regularMarketPrice?: number | string | null
+  regularMarketChangePercent?: number | string | null
+  regularMarketChange?: number | string | null
+  regularMarketPreviousClose?: number | string | null
+}
+
+type YahooQuoteResponse = {
+  quoteResponse?: {
+    result?: YahooQuoteEntry[]
+  }
+}
+
 const fetchJsonWithProxiesFirst = async <T>(url: URL): Promise<T> => {
   const response = await fetchWithProxies(url)
 
@@ -409,6 +423,53 @@ const fetchFmpQuotes = async (
   return mapped
 }
 
+const fetchYahooQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {
+  if (!symbols.length) {
+    return {}
+  }
+
+  const url = new URL('https://query1.finance.yahoo.com/v7/finance/quote')
+  url.searchParams.set('symbols', symbols.join(','))
+
+  const response = await fetchWithProxies(url)
+
+  if (!response.ok) {
+    throw new Error(`Yahoo Finance 응답 오류 (status: ${response.status})`)
+  }
+
+  const payload = (await response.json()) as YahooQuoteResponse
+  const results = payload?.quoteResponse?.result ?? []
+
+  const mapped: Record<string, PriceInfo> = {}
+  results.forEach((entry) => {
+    if (!entry?.symbol) {
+      return
+    }
+
+    const price =
+      parseNumericValue(entry.regularMarketPrice) ??
+      parseNumericValue(entry.regularMarketPreviousClose)
+
+    let changePercent = parseNumericValue(entry.regularMarketChangePercent)
+
+    if (changePercent === null) {
+      const change = parseNumericValue(entry.regularMarketChange)
+      const previousClose = parseNumericValue(entry.regularMarketPreviousClose)
+
+      if (change !== null && previousClose !== null && previousClose !== 0) {
+        changePercent = (change / previousClose) * 100
+      }
+    }
+
+    mapped[entry.symbol] = {
+      price,
+      changePercent,
+    }
+  })
+
+  return mapped
+}
+
 export type { PriceInfo }
 export {
   fetchBinanceQuotes,
@@ -417,5 +478,6 @@ export {
   fetchStooqQuotes,
   fetchWtiFromStooq,
   fetchUsdKrwFromExchangeRateHost,
+  fetchYahooQuotes,
   parseNumericValue,
 }

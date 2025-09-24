@@ -632,17 +632,17 @@
 
 .calendar-table thead th {
   text-align: left;
-  padding: 0.6rem 0.6rem 0.5rem 0;
+  padding: 0.45rem 0.6rem 0.35rem 0;
   color: rgba(226, 232, 240, 0.7);
   font-weight: 600;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .calendar-table tbody td {
-  padding: 0.6rem 0.6rem 0.6rem 0;
+  padding: 0.45rem 0.6rem 0.45rem 0;
   border-bottom: 1px solid rgba(51, 65, 85, 0.3);
   color: rgba(226, 232, 240, 0.92);
-  line-height: 1.35;
+  line-height: 1.28;
 }
 
 .calendar-table tbody tr:last-child td {
