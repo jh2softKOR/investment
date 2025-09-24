@@ -12,6 +12,11 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/api/consultations': {
+        target: 'http://localhost:4174',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
 })
