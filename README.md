@@ -31,6 +31,8 @@ VITE_ALPHA_VANTAGE_KEY=your_alpha_vantage_key
 # VITE_CALENDAR_API_BASE_URL=
 # 상담창구 API 서버 기본 주소 (예: https://api.example.com 또는 https://api.example.com/api)
 # VITE_CONSULTATION_API_BASE_URL=
+# 상담 요청을 이메일로도 수신하려면 주소를 지정하세요 (예: consult@example.com)
+# VITE_CONSULTATION_MAILTO=
 # 모든 실시간 호출을 비활성화하려면 0으로 설정 (기본값은 활성화)
 # VITE_DEFAULT_LIVE_DATA=0
 # 특정 위젯만 비활성화하려면 아래 플래그 중 하나를 0 또는 off 등으로 설정합니다.
@@ -68,3 +70,4 @@ npm run preview      # 빌드 검증
 - 외부 API의 CORS 정책이나 호출 제한에 따라 데이터 로드가 지연되거나 실패할 수 있습니다.
 - TradingView 위젯은 외부 스크립트를 로드하므로 네트워크 차단 환경에서는 표시되지 않을 수 있습니다.
 - BGSC 선물 시세는 차트 중심으로 제공되며, 별도 가격 API가 필요하면 `MarketOverview` 구성에서 쉽게 확장할 수 있습니다.
+- 상담창구 백엔드 연결이 불안정할 경우 입력 내용은 기기에 임시 저장되고, `VITE_CONSULTATION_MAILTO`를 지정하면 이메일 앱을 통해 직접 전송할 수 있습니다.

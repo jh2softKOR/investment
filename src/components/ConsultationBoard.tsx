@@ -62,6 +62,73 @@ const LOCAL_STORAGE_KEY = 'jh-consultation-board:records'
 const LOCAL_ONLY_ID_PREFIX = 'local-'
 const MAX_LOCAL_RECORDS = 50
 const MAX_DEBUG_SNIPPET_LENGTH = 240
+const CONSULTATION_MAIL_SUBJECT_PREFIX = 'JH 투자 상담 요청'
+
+const sanitizeMailtoAddress = (raw: string | undefined | null) => {
+  if (!raw) {
+    return null
+  }
+
+  const trimmed = raw.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  return trimmed.replace(/^mailto:/i, '') || null
+}
+
+const buildMailtoQuery = (params: Record<string, string | null | undefined>) => {
+  const search = new URLSearchParams()
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (!value) {
+      return
+    }
+    const normalized = value.trim()
+    if (!normalized) {
+      return
+    }
+    search.set(key, normalized)
+  })
+
+  return search.toString().replace(/\+/g, '%20')
+}
+
+const createConsultationMailtoHref = (
+  address: string,
+  payload: { name: string; contact?: string | null; message: string },
+) => {
+  const subject = payload.name ? `${CONSULTATION_MAIL_SUBJECT_PREFIX} - ${payload.name}` : CONSULTATION_MAIL_SUBJECT_PREFIX
+
+  const lines = [
+    `이름: ${payload.name || '미입력'}`,
+    payload.contact ? `연락처: ${payload.contact}` : null,
+    '',
+    '상담 내용:',
+    payload.message || '(내용이 비어 있습니다.)',
+  ].filter((line): line is string => line !== null)
+
+  const body = lines.join('\n')
+  const query = buildMailtoQuery({ subject, body })
+
+  return `mailto:${address}${query ? `?${query}` : ''}`
+}
+
+const openMailClient = (address: string, payload: { name: string; contact?: string | null; message: string }) => {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  const href = createConsultationMailtoHref(address, payload)
+
+  try {
+    window.location.href = href
+    return true
+  } catch (error) {
+    console.error('이메일 클라이언트를 여는 중 문제가 발생했습니다.', error)
+    return false
+  }
+}
 
 const buildConsultationApiBase = () => {
   const raw = import.meta.env.VITE_CONSULTATION_API_BASE_URL?.trim()
@@ -283,6 +350,11 @@ const ConsultationBoard = () => {
       : null,
   )
   const [lastSubmissionOffline, setLastSubmissionOffline] = useState(false)
+  const [mailFallbackUsed, setMailFallbackUsed] = useState(false)
+  const mailtoAddress = useMemo(
+    () => sanitizeMailtoAddress(import.meta.env.VITE_CONSULTATION_MAILTO),
+    [],
+  )
   const consultationApiEndpoint = useMemo(
     () => resolveConsultationEndpoint(buildConsultationApiBase()),
     [],
@@ -371,6 +443,47 @@ const ConsultationBoard = () => {
     [submitState]
   )
 
+  const handleManualMailto = useCallback(() => {
+    if (!mailtoAddress) {
+      return
+    }
+
+    const name = form.name.trim()
+    const contact = form.contact.trim()
+    const message = form.message.trim()
+
+    if (!name || !message) {
+      setSubmitError('이름과 상담 내용을 모두 입력해 주세요.')
+      setSubmitState('error')
+      return
+    }
+
+    const offlineRecord = createLocalConsultation({
+      name,
+      contact: contact || null,
+      message,
+    })
+    updateConsultations((current) => [offlineRecord, ...current])
+    setForm({ name: '', contact: '', message: '' })
+    setSubmitState('success')
+    setSubmitError(null)
+    setLastSubmissionOffline(true)
+    setError(null)
+    const opened = openMailClient(mailtoAddress, { name, contact: contact || null, message })
+    setMailFallbackUsed(Boolean(opened))
+    setLocalNotice(
+      opened
+        ? '이메일 앱으로 상담 요청을 전송하도록 안내했습니다. 임시 저장된 상담은 목록 상단에서 확인할 수 있습니다.'
+        : '이메일 앱을 자동으로 열지 못했습니다. 임시 저장된 상담 요청을 목록 상단에서 확인할 수 있습니다.'
+    )
+  }, [
+    form.contact,
+    form.message,
+    form.name,
+    mailtoAddress,
+    updateConsultations,
+  ])
+
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
@@ -391,6 +504,7 @@ const ConsultationBoard = () => {
       setSubmitState('submitting')
       setSubmitError(null)
       setLastSubmissionOffline(false)
+      setMailFallbackUsed(false)
 
       try {
         const response = await fetch(consultationApiEndpoint, {
@@ -438,6 +552,7 @@ const ConsultationBoard = () => {
         setForm({ name: '', contact: '', message: '' })
         setSubmitState('success')
         setLastSubmissionOffline(false)
+        setMailFallbackUsed(false)
         const updated = readStoredConsultations()
         setLocalNotice(
           hasLocalOnlyConsultations(updated)
@@ -459,6 +574,7 @@ const ConsultationBoard = () => {
           setSubmitError(fallbackMessage)
           setSubmitState('error')
           setLastSubmissionOffline(false)
+          setMailFallbackUsed(false)
           return
         }
 
@@ -473,11 +589,20 @@ const ConsultationBoard = () => {
         setSubmitError(null)
         setLastSubmissionOffline(true)
         setError(null)
-        setLocalNotice('네트워크 연결이 원활하지 않아 상담 내용을 이 기기에 임시 저장했습니다.')
+        const openedMailClient = mailtoAddress
+          ? openMailClient(mailtoAddress, { name, contact: contact || null, message })
+          : false
+        setMailFallbackUsed(Boolean(openedMailClient))
+        setLocalNotice(
+          openedMailClient
+            ? '네트워크 연결이 불안정해 이메일 앱으로 상담 내용을 전송하도록 안내했습니다. 임시 저장된 상담은 목록 상단에서 확인할 수 있습니다.'
+            : '네트워크 연결이 원활하지 않아 상담 내용을 이 기기에 임시 저장했습니다.'
+        )
       }
     },
     [
       consultationApiEndpoint,
+      mailtoAddress,
       form.contact,
       form.message,
       form.name,
@@ -502,15 +627,20 @@ const ConsultationBoard = () => {
 
   const submitHelperText = useMemo(() => {
     if (submitState === 'success') {
-      return lastSubmissionOffline
-        ? '네트워크가 불안정해 상담 내용을 이 기기에 임시 저장했습니다. 연결이 복구되면 새로고침 후 다시 전송해 주세요.'
-        : '상담 요청이 정상적으로 접수되었습니다. 빠른 시간 내에 답변드릴게요.'
+      if (lastSubmissionOffline) {
+        return mailFallbackUsed
+          ? '네트워크가 불안정해 이메일 앱으로 상담 내용을 보내도록 안내했습니다. 메일 발송함을 확인해 주세요.'
+          : '네트워크가 불안정해 상담 내용을 이 기기에 임시 저장했습니다. 연결이 복구되면 새로고침 후 다시 전송해 주세요.'
+      }
+      return '상담 요청이 정상적으로 접수되었습니다. 빠른 시간 내에 답변드릴게요.'
     }
     if (submitState === 'error' && submitError) {
       return submitError
     }
-    return '연락 가능한 이메일 또는 전화번호를 남겨주시면 빠르게 회신드리겠습니다.'
-  }, [lastSubmissionOffline, submitError, submitState])
+    return mailtoAddress
+      ? '연락 가능한 이메일 또는 전화번호를 남겨주시거나, 아래 이메일 버튼으로 직접 상담을 전송하실 수 있습니다.'
+      : '연락 가능한 이메일 또는 전화번호를 남겨주시면 빠르게 회신드리겠습니다.'
+  }, [lastSubmissionOffline, mailFallbackUsed, mailtoAddress, submitError, submitState])
 
   return (
     <section className="section consultation-board" aria-label="JH 컨설턴트 상담창구">
@@ -576,6 +706,16 @@ const ConsultationBoard = () => {
           <button type="submit" disabled={submitState === 'submitting'}>
             {submitState === 'submitting' ? '접수 중...' : '상담 요청 보내기'}
           </button>
+          {mailtoAddress && (
+            <button
+              type="button"
+              className="consultation-mailto-button"
+              onClick={handleManualMailto}
+              title="이메일 앱을 열어 상담 내용을 직접 보낼 수 있습니다."
+            >
+              이메일 앱으로 직접 보내기 ({mailtoAddress})
+            </button>
+          )}
           <p
             className={`consultation-helper consultation-helper-${
               submitState === 'error' ? 'error' : submitState === 'success' ? 'success' : 'neutral'
@@ -628,7 +768,15 @@ const ConsultationBoard = () => {
           )}
         </div>
       </div>
-      <p className="consultation-note">빠른 질의 응답이 가능한 1:1 맞춤형 상담 서비스입니다.</p>
+      <p className="consultation-note">
+        빠른 질의 응답이 가능한 1:1 맞춤형 상담 서비스입니다.
+        {mailtoAddress && (
+          <>
+            {' '}
+            이메일 상담: <a href={`mailto:${mailtoAddress}`}>{mailtoAddress}</a>
+          </>
+        )}
+      </p>
     </section>
   )
 }

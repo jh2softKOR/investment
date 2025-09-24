@@ -134,8 +134,11 @@ const fallbackTemplates: FallbackEventTemplate[] = [
 ]
 
 const INVESTING_CALENDAR_PAGE_URL = 'https://www.investing.com/economic-calendar/'
+const INVESTING_WIDGET_EMBED_URL =
+  'https://sslecal2.investing.com/events_economic_calendar.php?importance=3&country=5&columns=exc_country,exc_importance,exc_actual,exc_forecast,exc_previous&theme=dark'
+const INVESTING_WIDGET_LOAD_TIMEOUT_MS = 8000
 const INVESTING_WIDGET_NOTICE =
-  'Trading Economics API 연결이 원활하지 않아 기본 예시 데이터를 표시하고 있습니다. 최신 일정은 Investing.com 경제 캘린더에서 확인하세요.'
+  'Trading Economics API 연결이 원활하지 않아 Investing.com 위젯을 불러오고 있습니다. 위젯이 표시되지 않으면 공식 페이지에서 최신 일정을 확인하세요.'
 
 const formatNumber = (value?: string | number | null) => {
   if (value === null || value === undefined) {
@@ -323,34 +326,57 @@ const combineBaseAndPath = (base: string, path: string) => {
   return `${base}${normalizedPath}`
 }
 
-const InvestingCalendarFallbackCard = () => (
-  <div className="calendar-widget-card" aria-live="polite">
-    <div>
-      <h3 className="calendar-widget-title">Investing.com 미국 주요 지표 바로가기</h3>
-      <p className="calendar-widget-description">
-        Investing.com 경제 캘린더에서 최신 발표 일정을 직접 확인하실 수 있습니다. 아래 링크는 새 탭에서 열립니다.
-      </p>
-    </div>
-    <div className="calendar-widget-frame calendar-widget-frame--fallback" role="alert">
-      <p className="calendar-widget-fallback-message">
-        Investing.com에서 제공하던 실시간 위젯 경로가 더 이상 지원되지 않아 예시 데이터를 함께 안내해 드리고 있습니다. 자세한 일정은
-        공식 페이지에서 확인해 주세요.
-      </p>
-      <a
-        className="calendar-widget-fallback-link"
-        href={INVESTING_CALENDAR_PAGE_URL}
-        target="_blank"
-        rel="noreferrer"
-        aria-label="Investing.com 경제 캘린더 페이지 새 창에서 열기"
+const InvestingCalendarFallbackCard = () => {
+  const [widgetLoaded, setWidgetLoaded] = useState(false)
+  const [showManualHint, setShowManualHint] = useState(false)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowManualHint(true), INVESTING_WIDGET_LOAD_TIMEOUT_MS)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  return (
+    <div className="calendar-widget-card" aria-live="polite">
+      <div>
+        <h3 className="calendar-widget-title">Investing.com 미국 주요 지표 바로가기</h3>
+        <p className="calendar-widget-description">
+          Investing.com이 제공하는 미국(USD) 핵심 이벤트 위젯을 직접 불러옵니다. 회사·기관 네트워크 정책에 따라 위젯이 차단될 수
+          있으니, 표시되지 않으면 안내된 링크로 이동해 주세요.
+        </p>
+      </div>
+      <div
+        className={`calendar-widget-frame ${widgetLoaded ? 'calendar-widget-frame--ready' : 'calendar-widget-frame--loading'}`}
+        aria-busy={!widgetLoaded}
       >
-        Investing.com 경제 캘린더 열기
-      </a>
+        {!widgetLoaded && (
+          <div className="calendar-widget-loader" role="status">
+            <span className="calendar-widget-spinner" aria-hidden="true" />
+            USD 주요 경제지표 위젯을 불러오는 중입니다...
+          </div>
+        )}
+        <iframe
+          src={INVESTING_WIDGET_EMBED_URL}
+          title="Investing.com USD 주요 경제지표 위젯"
+          loading="lazy"
+          referrerPolicy="no-referrer-when-downgrade"
+          onLoad={() => setWidgetLoaded(true)}
+        />
+      </div>
+      <p className="calendar-widget-footnote">
+        데이터 제공: <a href={INVESTING_CALENDAR_PAGE_URL} target="_blank" rel="noreferrer">Investing.com</a>
+        {!widgetLoaded && showManualHint && (
+          <span className="calendar-widget-footnote-hint">
+            위젯이 표시되지 않으면{' '}
+            <a href={INVESTING_CALENDAR_PAGE_URL} target="_blank" rel="noreferrer">
+              Investing.com 경제 캘린더
+            </a>
+            에서 최신 일정을 확인하세요.
+          </span>
+        )}
+      </p>
     </div>
-    <p className="calendar-widget-footnote">
-      데이터 제공: <a href={INVESTING_CALENDAR_PAGE_URL} target="_blank" rel="noreferrer">Investing.com</a>
-    </p>
-  </div>
-)
+  )
+}
 
 const EconomicCalendar = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('weekly')

@@ -761,51 +761,56 @@
 .calendar-widget-frame {
   border-radius: 14px;
   overflow: hidden;
-  background: rgba(15, 23, 42, 0.8);
+  background: rgba(15, 23, 42, 0.82);
   border: 1px solid rgba(71, 85, 105, 0.4);
+  position: relative;
+  min-height: 22.5rem;
 }
 
 .calendar-widget-frame iframe {
   display: block;
   width: 100%;
   border: 0;
-  min-height: 480px;
+  min-height: 22.5rem;
+  opacity: 0;
+  transition: opacity 0.35s ease;
 }
 
-.calendar-widget-frame--fallback {
-  padding: 1.25rem 1.1rem;
+.calendar-widget-frame--ready iframe {
+  opacity: 1;
+}
+
+.calendar-widget-loader {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  align-items: flex-start;
-}
-
-.calendar-widget-fallback-message {
-  margin: 0;
-  color: rgba(226, 232, 240, 0.85);
-  line-height: 1.6;
-  font-size: 0.92rem;
-}
-
-.calendar-widget-fallback-link {
-  display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.55rem 1.05rem;
-  border-radius: 999px;
-  border: 1px solid rgba(59, 130, 246, 0.45);
-  background: rgba(96, 165, 250, 0.2);
-  color: #bfdbfe;
-  font-weight: 600;
-  text-decoration: none;
-  transition: background 0.2s ease, border-color 0.2s ease;
+  justify-content: center;
+  gap: 0.85rem;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.88));
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 0.95rem;
+  text-align: center;
+  padding: 1rem 1.2rem;
 }
 
-.calendar-widget-fallback-link:hover,
-.calendar-widget-fallback-link:focus-visible {
-  background: rgba(96, 165, 250, 0.32);
-  border-color: rgba(96, 165, 250, 0.6);
-  outline: none;
+.calendar-widget-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid rgba(96, 165, 250, 0.25);
+  border-top-color: #60a5fa;
+  animation: calendar-widget-spin 1s linear infinite;
+}
+
+@keyframes calendar-widget-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .calendar-widget-footnote {
@@ -818,6 +823,12 @@
   color: #60a5fa;
   font-weight: 600;
   text-decoration: none;
+}
+
+.calendar-widget-footnote-hint {
+  display: block;
+  margin-top: 0.45rem;
+  color: rgba(226, 232, 240, 0.8);
 }
 
 .calendar-widget-footnote a:hover {
@@ -1146,6 +1157,35 @@
   box-shadow: none;
 }
 
+.consultation-mailto-button {
+  margin-top: 0.75rem;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 1.15rem;
+  border-radius: 999px;
+  border: 1px dashed rgba(94, 234, 212, 0.5);
+  background: rgba(45, 212, 191, 0.12);
+  color: #5eead4;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.consultation-mailto-button:hover,
+.consultation-mailto-button:focus-visible {
+  background: rgba(45, 212, 191, 0.22);
+  border-color: rgba(94, 234, 212, 0.8);
+  color: #99f6e4;
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.consultation-mailto-button:focus-visible {
+  box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.35);
+}
+
 .consultation-helper {
   margin: 0;
   font-size: 0.85rem;
@@ -1263,6 +1303,18 @@
   margin: 0;
   color: rgba(226, 252, 236, 0.75);
   font-size: 0.95rem;
+}
+
+.consultation-note a {
+  color: #38bdf8;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.consultation-note a:hover,
+.consultation-note a:focus-visible {
+  color: #bae6fd;
+  outline: none;
 }
 
 .footer {
