@@ -27,7 +27,18 @@
 # .env
 VITE_FMP_KEY=your_financial_modeling_prep_key
 VITE_ALPHA_VANTAGE_KEY=your_alpha_vantage_key
+# 모든 실시간 호출을 비활성화하려면 0으로 설정 (기본값은 활성화)
+# VITE_DEFAULT_LIVE_DATA=0
+# 특정 위젯만 비활성화하려면 아래 플래그 중 하나를 0 또는 off 등으로 설정합니다.
+# VITE_ENABLE_LIVE_CALENDAR_DATA=1
+# VITE_ENABLE_LIVE_MARKET_DATA=1
+# VITE_ENABLE_LIVE_TICKER_DATA=1
+# VITE_ENABLE_LIVE_NEWS_DATA=1
+# VITE_ENABLE_LIVE_SENTIMENT_DATA=1
 ```
+
+> ℹ️ 개발 서버에서도 실시간 경제 캘린더와 시세 데이터를 바로 확인할 수 있도록 기본값을 "활성화"로 변경했습니다.
+> 외부 API 호출을 제한하고 싶다면 `VITE_DEFAULT_LIVE_DATA=0` 또는 각 영역별 `VITE_ENABLE_LIVE_*` 플래그를 `.env`에 추가하세요.
 
 ## 개발 및 빌드
 
