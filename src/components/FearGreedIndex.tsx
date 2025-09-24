@@ -61,6 +61,9 @@ const chartConfig = {
   paddingY: 10,
 }
 
+const normalizeUsIndexValue = (value: number) =>
+  Number.isFinite(value) ? Math.round(value) : value
+
 const formatUpdatedAt = (value: Date | null) => {
   if (!value) {
     return '-'
@@ -220,6 +223,7 @@ const parseUsFearGreedResponse = (payload: unknown): FearGreedEntry[] => {
     if (value === null) {
       return
     }
+    const normalizedValue = normalizeUsIndexValue(value)
     const timestamp = parseTimestampValue(timestampRaw)
     if (!timestamp) {
       return
@@ -227,9 +231,9 @@ const parseUsFearGreedResponse = (payload: unknown): FearGreedEntry[] => {
     const classification =
       typeof ratingRaw === 'string' && ratingRaw.trim().length > 0
         ? ratingRaw.trim()
-        : resolveToneByValue(value).label
+        : resolveToneByValue(normalizedValue).label
     entries.push({
-      value,
+      value: normalizedValue,
       classification,
       timestamp,
     })

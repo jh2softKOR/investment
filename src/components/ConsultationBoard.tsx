@@ -58,44 +58,188 @@ const splitMessage = (message: string) =>
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
 
+const LOCAL_STORAGE_KEY = 'jh-consultation-board:records'
+const LOCAL_ONLY_ID_PREFIX = 'local-'
+const MAX_LOCAL_RECORDS = 50
+
+const sanitizeStoredConsultation = (entry: unknown): ConsultationItem | null => {
+  if (!entry || typeof entry !== 'object') {
+    return null
+  }
+
+  const record = entry as Partial<ConsultationItem>
+  const id = typeof record.id === 'string' ? record.id.trim() : ''
+  const name = typeof record.name === 'string' ? record.name.trim() : ''
+  const message = typeof record.message === 'string' ? record.message : ''
+  const createdAtRaw = typeof record.createdAt === 'string' ? record.createdAt.trim() : ''
+
+  if (!id || !name || message.trim().length === 0 || !createdAtRaw) {
+    return null
+  }
+
+  const timestamp = Date.parse(createdAtRaw)
+  if (Number.isNaN(timestamp)) {
+    return null
+  }
+
+  const contact =
+    typeof record.contact === 'string' && record.contact.trim().length > 0
+      ? record.contact.trim()
+      : null
+
+  return {
+    id,
+    name,
+    contact,
+    message,
+    createdAt: new Date(timestamp).toISOString(),
+  }
+}
+
+const prepareConsultations = (entries: unknown[]): ConsultationItem[] => {
+  const deduped = new Map<string, ConsultationItem>()
+
+  entries.forEach((entry) => {
+    const sanitized = sanitizeStoredConsultation(entry)
+    if (!sanitized) {
+      return
+    }
+
+    const existing = deduped.get(sanitized.id)
+    if (!existing) {
+      deduped.set(sanitized.id, sanitized)
+      return
+    }
+
+    if (Date.parse(sanitized.createdAt) > Date.parse(existing.createdAt)) {
+      deduped.set(sanitized.id, sanitized)
+    }
+  })
+
+  return Array.from(deduped.values())
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .slice(0, MAX_LOCAL_RECORDS)
+}
+
+const readStoredConsultations = (): ConsultationItem[] => {
+  if (typeof window === 'undefined') {
+    return []
+  }
+
+  try {
+    const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY)
+    if (!raw) {
+      return []
+    }
+
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+
+    return prepareConsultations(parsed)
+  } catch (error) {
+    console.error('상담 내역 로컬 저장소를 불러오는 중 문제가 발생했습니다.', error)
+    return []
+  }
+}
+
+const storeConsultations = (records: ConsultationItem[]) => {
+  const prepared = prepareConsultations(records)
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(prepared))
+    } catch (error) {
+      console.error('상담 내역 로컬 저장소를 갱신하는 중 문제가 발생했습니다.', error)
+    }
+  }
+
+  return prepared
+}
+
+const createLocalConsultation = (input: {
+  name: string
+  contact?: string | null
+  message: string
+}): ConsultationItem => ({
+  id: `${LOCAL_ONLY_ID_PREFIX}${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  name: input.name,
+  contact: input.contact ?? null,
+  message: input.message,
+  createdAt: new Date().toISOString(),
+})
+
+const hasLocalOnlyConsultations = (records: ConsultationItem[]) =>
+  records.some((entry) => entry.id.startsWith(LOCAL_ONLY_ID_PREFIX))
+
 const ConsultationBoard = () => {
-  const [items, setItems] = useState<ConsultationItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [items, setItems] = useState<ConsultationItem[]>(() => readStoredConsultations())
+  const [loading, setLoading] = useState(items.length === 0)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', contact: '', message: '' })
   const [submitState, setSubmitState] = useState<SubmissionState>('idle')
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [localNotice, setLocalNotice] = useState<string | null>(
+    hasLocalOnlyConsultations(items)
+      ? '이전에 전송되지 않은 상담 요청이 목록 상단에 임시 저장되어 있습니다.'
+      : null,
+  )
+  const [lastSubmissionOffline, setLastSubmissionOffline] = useState(false)
 
-  const loadItems = useCallback(async (signal?: AbortSignal) => {
-    if (signal?.aborted) {
-      return
-    }
-    setLoading(true)
-    setError(null)
+  const updateConsultations = useCallback(
+    (updater: (current: ConsultationItem[]) => ConsultationItem[]) =>
+      setItems((current) => storeConsultations(updater(current))),
+    [],
+  )
 
-    try {
-      const response = await fetch('/api/consultations?limit=20', { signal })
-      const payload = await response.json().catch(() => null)
-
-      if (!response.ok) {
-        const message = payload && typeof payload.error === 'string' ? payload.error : null
-        throw new Error(message ?? '상담 내역을 불러오지 못했습니다.')
-      }
-
-      const entries = Array.isArray(payload?.items) ? (payload.items as ConsultationItem[]) : []
-      setItems(entries)
-    } catch (fetchError) {
+  const loadItems = useCallback(
+    async (signal?: AbortSignal) => {
       if (signal?.aborted) {
         return
       }
-      console.error('상담 내역을 불러오는 중 문제가 발생했습니다.', fetchError)
-      setError('상담 내역을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')
-    } finally {
-      if (!signal?.aborted) {
-        setLoading(false)
+      setLoading(true)
+      setError(null)
+
+      try {
+        const response = await fetch('/api/consultations?limit=20', { signal })
+        const payload = await response.json().catch(() => null)
+
+        if (!response.ok) {
+          const message = payload && typeof payload.error === 'string' ? payload.error : null
+          throw new Error(message ?? '상담 내역을 불러오지 못했습니다.')
+        }
+
+        const entries = Array.isArray(payload?.items) ? (payload.items as ConsultationItem[]) : []
+        const stored = readStoredConsultations()
+        const localOnly = stored.filter((entry) => entry.id.startsWith(LOCAL_ONLY_ID_PREFIX))
+        updateConsultations(() => [...localOnly, ...entries])
+        setLocalNotice(
+          localOnly.length > 0
+            ? '이전에 전송되지 않은 상담 요청이 목록 상단에 임시 저장되어 있습니다.'
+            : null,
+        )
+      } catch (fetchError) {
+        if (signal?.aborted) {
+          return
+        }
+        console.error('상담 내역을 불러오는 중 문제가 발생했습니다.', fetchError)
+        const stored = readStoredConsultations()
+        if (stored.length > 0) {
+          updateConsultations(() => stored)
+          setLocalNotice('서버 연결이 원활하지 않아 이 기기에 저장된 상담 내역을 표시합니다.')
+          setError(null)
+        } else {
+          setError('상담 내역을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')
+        }
+      } finally {
+        if (!signal?.aborted) {
+          setLoading(false)
+        }
       }
-    }
-  }, [])
+    },
+    [updateConsultations],
+  )
 
   useEffect(() => {
     const controller = new AbortController()
@@ -141,6 +285,7 @@ const ConsultationBoard = () => {
 
       setSubmitState('submitting')
       setSubmitError(null)
+      setLastSubmissionOffline(false)
 
       try {
         const response = await fetch('/api/consultations', {
@@ -159,30 +304,63 @@ const ConsultationBoard = () => {
 
         if (!response.ok) {
           const messageFromServer = payload && typeof payload.error === 'string' ? payload.error : null
-          throw new Error(messageFromServer ?? '상담 요청을 접수하지 못했습니다.')
+          const error = new Error(messageFromServer ?? '상담 요청을 접수하지 못했습니다.') as Error & {
+            status?: number
+          }
+          error.status = response.status
+          throw error
         }
 
         const savedItem = payload?.item as ConsultationItem | undefined
         if (savedItem) {
-          setItems((current) => {
+          updateConsultations((current) => {
             const deduped = current.filter((entry) => entry.id !== savedItem.id)
-            return [savedItem, ...deduped].slice(0, 20)
+            return [savedItem, ...deduped]
           })
         }
 
         setForm({ name: '', contact: '', message: '' })
         setSubmitState('success')
+        setLastSubmissionOffline(false)
+        const updated = readStoredConsultations()
+        setLocalNotice(
+          hasLocalOnlyConsultations(updated)
+            ? '이전에 전송되지 않은 상담 요청이 목록 상단에 임시 저장되어 있습니다.'
+            : null,
+        )
       } catch (submissionError) {
         console.error('상담 요청 전송 실패', submissionError)
-        const fallbackMessage =
-          submissionError instanceof Error
-            ? submissionError.message
-            : '상담 요청을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.'
-        setSubmitError(fallbackMessage)
-        setSubmitState('error')
+        const status =
+          typeof (submissionError as { status?: unknown })?.status === 'number'
+            ? ((submissionError as { status?: number }).status as number)
+            : null
+
+        if (status && status >= 400 && status < 500) {
+          const fallbackMessage =
+            submissionError instanceof Error
+              ? submissionError.message
+              : '상담 요청을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+          setSubmitError(fallbackMessage)
+          setSubmitState('error')
+          setLastSubmissionOffline(false)
+          return
+        }
+
+        const offlineRecord = createLocalConsultation({
+          name,
+          contact: contact || null,
+          message,
+        })
+        updateConsultations((current) => [offlineRecord, ...current])
+        setForm({ name: '', contact: '', message: '' })
+        setSubmitState('success')
+        setSubmitError(null)
+        setLastSubmissionOffline(true)
+        setError(null)
+        setLocalNotice('네트워크 연결이 원활하지 않아 상담 내용을 이 기기에 임시 저장했습니다.')
       }
     },
-    [form.contact, form.message, form.name, submitState]
+    [form.contact, form.message, form.name, submitState, updateConsultations]
   )
 
   useEffect(() => {
@@ -201,13 +379,15 @@ const ConsultationBoard = () => {
 
   const submitHelperText = useMemo(() => {
     if (submitState === 'success') {
-      return '상담 요청이 정상적으로 접수되었습니다. 빠른 시간 내에 답변드릴게요.'
+      return lastSubmissionOffline
+        ? '네트워크가 불안정해 상담 내용을 이 기기에 임시 저장했습니다. 연결이 복구되면 새로고침 후 다시 전송해 주세요.'
+        : '상담 요청이 정상적으로 접수되었습니다. 빠른 시간 내에 답변드릴게요.'
     }
     if (submitState === 'error' && submitError) {
       return submitError
     }
     return '연락 가능한 이메일 또는 전화번호를 남겨주시면 빠르게 회신드리겠습니다.'
-  }, [submitError, submitState])
+  }, [lastSubmissionOffline, submitError, submitState])
 
   return (
     <section className="section consultation-board" aria-label="JH 컨설턴트 상담창구">
@@ -283,9 +463,13 @@ const ConsultationBoard = () => {
         </form>
 
         <div className="consultation-messages" aria-live="polite">
-          {loading ? (
+          {localNotice && (
+            <div className="consultation-status consultation-status-notice">{localNotice}</div>
+          )}
+          {loading && (
             <div className="consultation-status">최근 상담 내역을 불러오는 중입니다...</div>
-          ) : error ? (
+          )}
+          {error ? (
             <div className="consultation-status consultation-status-error">{error}</div>
           ) : items.length === 0 ? (
             <div className="consultation-status">아직 등록된 상담 내역이 없습니다. 첫 번째 상담을 남겨보세요!</div>
@@ -301,6 +485,9 @@ const ConsultationBoard = () => {
                     <div className="consultation-message-header">
                       <span className="consultation-message-name">{item.name}</span>
                       {item.contact && <span className="consultation-message-contact">{item.contact}</span>}
+                      {item.id.startsWith(LOCAL_ONLY_ID_PREFIX) && (
+                        <span className="consultation-message-badge">임시 저장</span>
+                      )}
                     </div>
                     <div className="consultation-message-body">
                       {lines.map((line, index) => (

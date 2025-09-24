@@ -461,9 +461,10 @@ const EconomicCalendar = () => {
                 />
               </svg>
             </span>
-            <span className="section-title-text">USD 주요 경제 지표 캘린더</span>
+            <span className="section-title-text">
+              USD 주요 경제 지표 캘린더  (Trading Economics 데이터를 기반으로 미국 달러 핵심 이벤트를 확인하세요.)
+            </span>
           </h2>
-          <span>Trading Economics 데이터를 기반으로 미국 달러 핵심 이벤트를 확인하세요.</span>
         </div>
         <div className="calendar-controls" role="group" aria-label="경제 캘린더 보기 옵션">
           <div className="segmented-control" role="tablist" aria-label="기간 선택">
@@ -526,13 +527,6 @@ const EconomicCalendar = () => {
           </div>
         </div>
       </div>
-
-      {status === 'error' && (
-        <div className="status-banner" role="alert">
-          경제 지표를 불러오는 중 문제가 발생하여 예시 데이터를 표시합니다. 잠시 후 다시 시도해주세요.
-        </div>
-      )}
-
       {status === 'loading' ? (
         <div className="status-banner" role="status">
           경제 캘린더 데이터를 불러오는 중입니다...
