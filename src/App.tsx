@@ -8,51 +8,76 @@ import ConsultationMailForm from './components/ConsultationMailForm'
 const HeroIcon = () => (
   <svg viewBox="0 0 96 96" role="img" aria-hidden="true" focusable="false">
     <defs>
-      <linearGradient id="heroNeonBase" x1="18" y1="12" x2="78" y2="84" gradientUnits="userSpaceOnUse">
-        <stop offset="0" stopColor="#052e16" />
-        <stop offset="1" stopColor="#04130f" />
-      </linearGradient>
-      <radialGradient id="heroNeonGlow" cx="48" cy="48" r="42" gradientUnits="userSpaceOnUse">
-        <stop offset="0.1" stopColor="#82ffb5" stopOpacity="0.25" />
-        <stop offset="0.55" stopColor="#2af598" stopOpacity="0.1" />
-        <stop offset="1" stopColor="#0f172a" stopOpacity="0" />
+      <radialGradient id="jigsawBg" cx="48" cy="48" r="46" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stopColor="#111827" />
+        <stop offset="0.65" stopColor="#020617" />
+        <stop offset="1" stopColor="#000" />
       </radialGradient>
-      <linearGradient id="heroNeonLine" x1="24" y1="64" x2="74" y2="28" gradientUnits="userSpaceOnUse">
-        <stop offset="0" stopColor="#7dff7a" />
-        <stop offset="0.45" stopColor="#72ffa8" />
-        <stop offset="1" stopColor="#4cffd0" />
+      <radialGradient id="jigsawFace" cx="48" cy="42" r="22" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stopColor="#fdf8f7" />
+        <stop offset="1" stopColor="#e4d6cf" />
+      </radialGradient>
+      <linearGradient id="jigsawSuit" x1="32" y1="74" x2="64" y2="92" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stopColor="#0f172a" />
+        <stop offset="1" stopColor="#1f2937" />
       </linearGradient>
-      <linearGradient id="heroNeonBars" x1="28" y1="34" x2="68" y2="70" gradientUnits="userSpaceOnUse">
-        <stop offset="0" stopColor="#16f08b" stopOpacity="0.35" />
-        <stop offset="1" stopColor="#6dffb5" stopOpacity="0.7" />
-      </linearGradient>
+      <filter id="jigsawGlow" x="-35%" y="-35%" width="170%" height="170%" colorInterpolationFilters="sRGB">
+        <feDropShadow dx="0" dy="0" stdDeviation="3.2" floodColor="#f87171" floodOpacity="0.55" />
+      </filter>
     </defs>
-    <rect x="10" y="10" width="76" height="76" rx="20" fill="#030712" />
-    <rect x="14" y="14" width="68" height="68" rx="18" fill="url(#heroNeonBase)" />
-    <rect x="14" y="14" width="68" height="68" rx="18" fill="url(#heroNeonGlow)" />
-    <rect
-      x="20"
-      y="20"
-      width="56"
-      height="56"
-      rx="14"
-      fill="none"
-      stroke="rgba(148, 255, 193, 0.25)"
-      strokeWidth="1.4"
-    />
-    <g fill="none" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="10" y="10" width="76" height="76" rx="22" fill="url(#jigsawBg)" stroke="#1f2937" strokeWidth="1.5" />
+    <g filter="url(#jigsawGlow)">
       <path
-        d="M26 58 36 48l10 8 12-16 12 6"
-        stroke="url(#heroNeonLine)"
-        strokeWidth="3"
+        d="M48 21c-11.5 0-21 9.02-21 20.22 0 7.03 3.62 12.84 9.36 16.09C35.02 60.76 32 65.86 32 71.86c0 1.86 .28 3.12 .82 3.97 .64 .99 1.69 1.55 3.03 1.55 2.46 0 5.35 -1.77 7.36 -4.36 1.89 1.01 3.73 1.52 5.79 1.52 2.05 0 3.88 -.5 5.75 -1.5 2.02 2.56 4.9 4.34 7.36 4.34 1.34 0 2.39 -.56 3.03 -1.55 .54 -.85 .82 -2.11 .82 -3.97 0 -6.02 -3.05 -11.14 -4.37 -14.64 5.65 -3.27 9.41 -9.09 9.41 -16.09C69 30.02 59.5 21 48 21z"
+        fill="url(#jigsawFace)"
+        stroke="#d6bfb3"
+        strokeWidth="1.4"
       />
-      <path d="M30 60v8" stroke="url(#heroNeonBars)" strokeWidth="3.2" />
-      <path d="M42 54v14" stroke="url(#heroNeonBars)" strokeWidth="3.2" />
-      <path d="M54 44v24" stroke="url(#heroNeonBars)" strokeWidth="3.2" />
-      <path d="M66 40v28" stroke="url(#heroNeonBars)" strokeWidth="3.2" />
     </g>
-    <circle cx="68" cy="36" r="5" fill="#b5ff8a" opacity="0.85" />
-    <circle cx="30" cy="68" r="3" fill="#6bff95" opacity="0.8" />
+    <path
+      d="M32 72.5c4.2-2.65 8.63-3.95 16-3.95s11.8 1.3 16 3.95c-4.56 4.22-10.28 6.38-16 6.38s-11.44-2.16-16-6.38z"
+      fill="url(#jigsawSuit)"
+    />
+    <path
+      d="M37 33c4.2-3.8 7.96-5.8 11-5.8 3.05 0 6.79 2 11 5.8"
+      stroke="#1f2937"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path d="M39 50c3.2 2.3 6.48 3.4 9 3.4s5.8-1.1 9-3.4" stroke="#991b1b" strokeWidth="2" strokeLinecap="round" />
+    <path
+      d="M45.5 57.8c1.56 1.2 3.01 1.8 4.5 1.8s2.96-.6 4.5-1.8"
+      stroke="#111827"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <g fill="#ef4444" stroke="#7f1d1d" strokeWidth="1.4">
+      <circle cx="38.8" cy="45.4" r="4.2" />
+      <circle cx="57.2" cy="45.4" r="4.2" />
+    </g>
+    <g fill="#0f172a">
+      <circle cx="38.8" cy="45.4" r="2" />
+      <circle cx="57.2" cy="45.4" r="2" />
+    </g>
+    <g stroke="#b91c1c" strokeWidth="1.4" strokeLinecap="round">
+      <path d="M33.4 52.5c2.15 1.2 3.8 2.4 4.8 3.7" fill="none" />
+      <path d="M62.6 52.5c-2.15 1.2-3.8 2.4-4.8 3.7" fill="none" />
+    </g>
+    <g stroke="#b91c1c" strokeLinecap="round" strokeWidth="1.1" fill="none">
+      <path d="M34.6 49.6c2.4.2 3.8 1 4.8 2.2" />
+      <path d="M61.4 49.6c-2.4.2-3.8 1-4.8 2.2" />
+    </g>
+    <path
+      d="M48 62.8c-3.8 0-6.9 1.35-6.9 3.02 0 1.08 1.24 2.05 3.34 2.6 1.1.28 2.35.42 3.56.42s2.46-.14 3.56-.42c2.1-.55 3.34-1.52 3.34-2.6 0-1.67-3.1-3.02-6.9-3.02z"
+      fill="#f8fafc"
+      stroke="#cbd5f5"
+      strokeWidth="1"
+    />
+    <circle cx="48" cy="71.2" r="2.1" fill="#f87171" stroke="#b91c1c" strokeWidth="1" />
+    <path d="M45 68l-3.6 6.4" stroke="#e11d48" strokeWidth="1.2" strokeLinecap="round" />
+    <path d="M51 68l3.6 6.4" stroke="#e11d48" strokeWidth="1.2" strokeLinecap="round" />
   </svg>
 )
 
