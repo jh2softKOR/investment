@@ -41,6 +41,8 @@ VITE_ALPHA_VANTAGE_KEY=your_alpha_vantage_key
 # VITE_ENABLE_LIVE_TICKER_DATA=1
 # VITE_ENABLE_LIVE_NEWS_DATA=1
 # VITE_ENABLE_LIVE_SENTIMENT_DATA=1
+# 사용자 지정 시세 JSON을 활용하려면 경로를 지정합니다. (기본값: /data/custom-ticker.json)
+# VITE_CUSTOM_TICKER_URL=/data/custom-ticker.json
 
 # backend/.env (예시)
 TRADING_ECONOMICS_API_KEY=guest:guest
@@ -72,6 +74,24 @@ npm run preview      # 빌드 검증
 - 위치: [`public/consultation.html`](public/consultation.html)
 - 구성: 주간 미국 경제지표 위젯, 온디바이스 투자 Q&A, FormSubmit 기반 문의 메일 폼
 - 사용 방법: 파일을 그대로 배포하거나 브라우저에서 열면 됩니다. 메일 전송 주소만 본인 주소로 교체하세요.
+
+## 사용자 지정 시세 데이터 연동
+
+- `public/data/custom-ticker.json` 파일을 수정하거나 `VITE_CUSTOM_TICKER_URL` 환경 변수로 직접 만든 API/JSON 주소를 지정하면
+  원/달러 환율, WTI, 금, 은 가격을 우선적으로 불러옵니다.
+- JSON 구조 예시는 다음과 같습니다.
+
+```json
+{
+  "usdKrw": { "price": 1332.45, "changePercent": -0.28 },
+  "wti": { "price": 78.92, "changePercent": 0.73 },
+  "gold": { "price": 2368.45, "changePercent": 0.58 },
+  "silver": { "price": 28.42, "changePercent": -0.21 }
+}
+```
+
+- `changePercent`가 없다면 `change`와 `previousClose` 값으로 등락률을 계산하며, 데이터가 비어 있는 항목은 자동으로 다음 공급자로
+  넘어갑니다.
 
 ## 주의 사항
 

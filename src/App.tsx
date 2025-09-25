@@ -11,7 +11,14 @@ function App() {
       <div className="app-inner">
         <header className="hero">
           <div className="hero-main">
-            <h1>JH Investment Lab</h1>
+            <div className="hero-title">
+              <h1>JH Investment Lab</h1>
+              <img
+                src="/expert-analyst.svg"
+                alt="투자 전문가 아이콘"
+                className="hero-title-image"
+              />
+            </div>
             <p>
               개인 투자자의 성공 투자를 위한 맞춤형 포탈 입니다. JH 컨설턴트와 상의하세요.(하단 링크)
             </p>

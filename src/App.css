@@ -64,11 +64,24 @@
   gap: 0.85rem;
 }
 
+.hero-title {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+}
+
 .hero h1 {
   font-size: clamp(2rem, 4vw, 3rem);
   margin: 0;
   font-weight: 700;
   color: #f8fafc;
+}
+
+.hero-title-image {
+  width: clamp(72px, 12vw, 96px);
+  height: auto;
+  flex-shrink: 0;
+  filter: drop-shadow(0 12px 35px rgba(15, 23, 42, 0.55));
 }
 
 .hero p {

@@ -4,7 +4,7 @@ import {
   fetchStooqQuotes,
   fetchUsdKrwFromExchangeRateHost,
   fetchWtiFromStooq,
-  fetchYahooQuotes,
+  parseNumericValue,
 } from '../utils/marketData'
 import {
   fallbackExchangeNotice,
@@ -21,6 +21,111 @@ const goldSymbol = 'GC=F' as const
 const silverSymbol = 'SI=F' as const
 const stooqGoldSymbol = 'gc.f' as const
 const stooqSilverSymbol = 'si.f' as const
+const customTickerEndpoint = (import.meta.env.VITE_CUSTOM_TICKER_URL ?? '/data/custom-ticker.json')
+  .trim()
+
+type CustomTickerKey = 'usdKrw' | 'wti' | 'gold' | 'silver'
+
+type CustomTickerEntry = {
+  price?: number | string | null
+  changePercent?: number | string | null
+  change?: number | string | null
+  previousClose?: number | string | null
+}
+
+type CustomTickerPayload = Partial<Record<CustomTickerKey, CustomTickerEntry>>
+
+let customTickerCache: CustomTickerPayload | null = null
+let customTickerFetchInFlight: Promise<CustomTickerPayload | null> | null = null
+let customTickerUnavailable = false
+
+const loadCustomTickerPayload = async (): Promise<CustomTickerPayload | null> => {
+  if (!customTickerEndpoint) {
+    customTickerUnavailable = true
+    return null
+  }
+
+  if (customTickerCache) {
+    return customTickerCache
+  }
+
+  if (customTickerUnavailable) {
+    return null
+  }
+
+  if (customTickerFetchInFlight) {
+    return customTickerFetchInFlight
+  }
+
+  customTickerFetchInFlight = (async () => {
+    try {
+      const response = await fetch(customTickerEndpoint, {
+        cache: 'no-store',
+        credentials: 'omit',
+      })
+
+      if (!response.ok) {
+        console.warn(
+          `사용자 지정 시세 (${customTickerEndpoint}) 응답 오류 (status: ${response.status})`
+        )
+        customTickerUnavailable = true
+        return null
+      }
+
+      const data = (await response.json()) as unknown
+      if (!data || typeof data !== 'object') {
+        console.warn('사용자 지정 시세 데이터 구조가 올바르지 않습니다.')
+        customTickerUnavailable = true
+        return null
+      }
+
+      customTickerCache = data as CustomTickerPayload
+      return customTickerCache
+    } catch (error) {
+      console.error('사용자 지정 시세 데이터 로딩 실패', error)
+      return null
+    } finally {
+      customTickerFetchInFlight = null
+    }
+  })()
+
+  const payload = await customTickerFetchInFlight
+  if (!payload) {
+    customTickerUnavailable = true
+  }
+
+  return payload
+}
+
+const resolveCustomTickerEntry = async (key: CustomTickerKey): Promise<PriceInfo | null> => {
+  const payload = await loadCustomTickerPayload()
+  if (!payload) {
+    return null
+  }
+
+  const entry = payload[key]
+  if (!entry || typeof entry !== 'object') {
+    return null
+  }
+
+  const price = parseNumericValue(entry.price)
+  let changePercent = parseNumericValue(entry.changePercent)
+
+  if (changePercent === null) {
+    const change = parseNumericValue(entry.change)
+    const previousClose = parseNumericValue(entry.previousClose)
+
+    if (change !== null && previousClose !== null && previousClose !== 0) {
+      changePercent = (change / previousClose) * 100
+    }
+  }
+
+  if (price === null && changePercent === null) {
+    return null
+  }
+
+  return { price, changePercent }
+}
 
 const formatPrice = (value: number | null | undefined) => {
   if (value === null || value === undefined) {
@@ -116,28 +221,31 @@ const ExchangeRateTicker = () => {
         setRateStatus('loading')
       }
 
-      try {
-        const info = await fetchUsdKrwFromExchangeRateHost()
-        if (!active) {
-          return
-        }
+      const rateFetchers: Array<{ name: string; loader: () => Promise<PriceInfo | null> }> = [
+        { name: '사용자 지정 데이터', loader: () => resolveCustomTickerEntry('usdKrw') },
+        { name: 'ExchangeRate.host', loader: () => fetchUsdKrwFromExchangeRateHost() },
+      ]
 
-        if (hasMeaningfulInfo(info)) {
-          setRate(info)
-          setRateStatus('idle')
-          setRateFallback(false)
-          return
-        }
+      for (const fetcher of rateFetchers) {
+        try {
+          const info = await fetcher.loader()
+          if (!active) {
+            return
+          }
 
-        console.error('원/달러 환율 데이터가 비어 있습니다.')
-        setRate(info)
-      } catch (error) {
-        console.error('원/달러 환율 로딩 실패', error)
-        if (!active) {
-          return
-        }
+          if (hasMeaningfulInfo(info)) {
+            setRate(info)
+            setRateStatus('idle')
+            setRateFallback(false)
+            return
+          }
 
-        setRate(null)
+          if (info) {
+            setRate(info)
+          }
+        } catch (error) {
+          console.error(`원/달러 환율 ${fetcher.name} 로딩 실패`, error)
+        }
       }
 
       if (!active) {
@@ -228,11 +336,8 @@ const ExchangeRateTicker = () => {
         setFallback: setOilFallback,
         fetchers: [
           {
-            name: 'Yahoo Finance',
-            loader: async () => {
-              const quotes = await fetchYahooQuotes([wtiSymbol])
-              return quotes[wtiSymbol] ?? null
-            },
+            name: '사용자 지정 데이터',
+            loader: () => resolveCustomTickerEntry('wti'),
           },
           {
             name: 'Stooq',
@@ -257,11 +362,8 @@ const ExchangeRateTicker = () => {
         setFallback: setGoldFallback,
         fetchers: [
           {
-            name: 'Yahoo Finance',
-            loader: async () => {
-              const quotes = await fetchYahooQuotes([goldSymbol])
-              return quotes[goldSymbol] ?? null
-            },
+            name: '사용자 지정 데이터',
+            loader: () => resolveCustomTickerEntry('gold'),
           },
           {
             name: 'Stooq',
@@ -289,11 +391,8 @@ const ExchangeRateTicker = () => {
         setFallback: setSilverFallback,
         fetchers: [
           {
-            name: 'Yahoo Finance',
-            loader: async () => {
-              const quotes = await fetchYahooQuotes([silverSymbol])
-              return quotes[silverSymbol] ?? null
-            },
+            name: '사용자 지정 데이터',
+            loader: () => resolveCustomTickerEntry('silver'),
           },
           {
             name: 'Stooq',

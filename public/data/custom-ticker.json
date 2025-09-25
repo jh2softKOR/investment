@@ -1,0 +1,18 @@
+{
+  "usdKrw": {
+    "price": 1332.45,
+    "changePercent": -0.28
+  },
+  "wti": {
+    "price": 78.92,
+    "changePercent": 0.73
+  },
+  "gold": {
+    "price": 2368.45,
+    "changePercent": 0.58
+  },
+  "silver": {
+    "price": 28.42,
+    "changePercent": -0.21
+  }
+}
