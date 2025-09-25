@@ -1,36 +1,71 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 type RangeOption = 'day' | 'week'
+type ImportanceOption = 'high' | 'medium' | 'low'
 
-type TradingEconomicsEvent = {
-  DateUTC?: string
-  Date?: string
-  Country?: string
-  Event?: string
-  EventName?: string
-  Actual?: string
-  Forecast?: string
-  Previous?: string
-  Importance?: number
-  Impact?: number
+type CalendarApiEvent = {
+  id: string
+  title: string
+  category: string | null
+  country: string | null
+  datetime: string
+  importance: 'High' | 'Medium' | 'Low' | 'None'
+  importanceValue: 1 | 2 | 3 | null
+  actual: string | null
+  previous: string | null
+  forecast: string | null
+  reference: string | null
+  source: string | null
+  unit: string | null
+  updatedAt: string | null
+  url: string | null
+}
+
+type CalendarApiMeta = {
+  source?: string
+  startDate?: string
+  endDate?: string
+  requestedAt?: string
+  importanceLabels?: string[]
+  cache?: { hit?: boolean }
+}
+
+type CalendarApiResponse = {
+  meta?: CalendarApiMeta
+  events?: CalendarApiEvent[]
+}
+
+type CalendarMeta = {
+  source: string
+  startDate: string
+  endDate: string
+  requestedAt: string
+  importanceLabels: string[]
+  cacheHit: boolean
 }
 
 type CalendarRow = {
   id: string
   timeLabel: string
   title: string
+  url: string | null
+  details: string[]
   actual: string
   actualTone: 'up' | 'down' | null
   forecast: string
   previous: string
-  importance: number
+  importanceValue: 0 | 1 | 2 | 3
+  importanceLabel: string
 }
 
-const COUNTRY = 'united states'
-const IMPORTANCE = 3
 const TZ_OFFSET = 9
-const API_KEY = 'guest:guest'
-const BASE_URL = 'https://api.tradingeconomics.com/calendar'
+const API_ENDPOINT = '/api/trading-economics/calendar'
+
+const importanceOptions: { value: ImportanceOption; label: string }[] = [
+  { value: 'high', label: '높음' },
+  { value: 'medium', label: '보통' },
+  { value: 'low', label: '낮음' },
+]
 
 const formatDate = (date: Date) => date.toISOString().slice(0, 10)
 
@@ -51,14 +86,14 @@ const getRange = (type: RangeOption) => {
   return { d1: formatDate(start), d2: formatDate(end) }
 }
 
-const toKSTDate = (iso?: string) => {
+const toKSTDate = (iso?: string | null) => {
   if (!iso) return null
   const parsed = new Date(iso)
   if (Number.isNaN(parsed.getTime())) return null
   return new Date(parsed.getTime() + TZ_OFFSET * 60 * 60 * 1000)
 }
 
-const formatKSTLabel = (iso?: string) => {
+const formatKSTLabel = (iso?: string | null) => {
   const date = toKSTDate(iso)
   if (!date) return '—'
 
@@ -70,10 +105,54 @@ const formatKSTLabel = (iso?: string) => {
   return `${month}/${day} ${hours}:${minutes}`
 }
 
-const pillClass = (importance: number) => {
-  if (importance >= 3) return 'pill pill--high'
+const formatMetaTimestamp = (iso?: string | null) => {
+  const label = formatKSTLabel(iso ?? undefined)
+  return label === '—' ? '—' : `${label} KST`
+}
+
+const formatDateRange = (start?: string | null, end?: string | null) => {
+  if (!start || !end) return '—'
+  return `${start} ~ ${end}`
+}
+
+const toNullable = (value?: string | number | null) => {
+  if (value === null || value === undefined) return null
+  const text = typeof value === 'number' ? value.toString() : value
+  const trimmed = text.trim()
+  if (!trimmed || trimmed.toLowerCase() === 'null') return null
+  return trimmed
+}
+
+const translateImportance = (label?: string | null) => {
+  switch ((label ?? '').toLowerCase()) {
+    case 'high':
+      return '높음'
+    case 'medium':
+      return '보통'
+    case 'low':
+      return '낮음'
+    default:
+      return '정보없음'
+  }
+}
+
+const normalizeImportanceValue = (value?: number | null, label?: string | null): 0 | 1 | 2 | 3 => {
+  if (value === 3) return 3
+  if (value === 2) return 2
+  if (value === 1) return 1
+
+  const lowered = (label ?? '').toLowerCase()
+  if (lowered === 'high') return 3
+  if (lowered === 'medium') return 2
+  if (lowered === 'low') return 1
+  return 0
+}
+
+const pillClass = (importance: number | null | undefined) => {
+  if (importance && importance >= 3) return 'pill pill--high'
   if (importance === 2) return 'pill pill--med'
-  return 'pill pill--low'
+  if (importance === 1) return 'pill pill--low'
+  return 'pill pill--none'
 }
 
 const sanitize = (value?: string | number | null) => {
@@ -90,72 +169,134 @@ const detectTone = (value: string) => {
 
 const EconomicCalendar = () => {
   const [range, setRange] = useState<RangeOption>('week')
+  const [importanceFilter, setImportanceFilter] = useState<ImportanceOption[]>(['high'])
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [events, setEvents] = useState<CalendarRow[]>([])
+  const [meta, setMeta] = useState<CalendarMeta | null>(null)
   const [refreshIndex, setRefreshIndex] = useState(0)
 
-  const fetchCalendar = useCallback(async () => {
+  useEffect(() => {
+    let isActive = true
+    const controller = new AbortController()
+    const { d1, d2 } = getRange(range)
+
     setLoading(true)
     setError(null)
 
-    const { d1, d2 } = getRange(range)
     const params = new URLSearchParams({
-      country: COUNTRY,
-      importance: String(IMPORTANCE),
-      d1,
-      d2,
-      c: API_KEY,
+      start: d1,
+      end: d2,
+      scope: 'custom',
+      window: range === 'day' ? '1' : '7',
     })
 
-    try {
-      const response = await fetch(`${BASE_URL}?${params.toString()}`)
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
+    if (importanceFilter.length > 0 && importanceFilter.length < importanceOptions.length) {
+      params.set('importance', importanceFilter.join(','))
+    }
 
-      const data: TradingEconomicsEvent[] = await response.json()
-      const rows = (data ?? [])
-        .filter((item) => (item.Country ?? '').toLowerCase().includes(COUNTRY))
-        .sort((a, b) => {
-          const aDate = new Date(a.DateUTC ?? a.Date ?? 0).getTime()
-          const bDate = new Date(b.DateUTC ?? b.Date ?? 0).getTime()
-          return aDate - bDate
+    const fetchCalendar = async () => {
+      try {
+        const response = await fetch(`${API_ENDPOINT}?${params.toString()}`, {
+          signal: controller.signal,
         })
-        .map<CalendarRow>((item, index) => {
-          const timeLabel = formatKSTLabel(item.DateUTC ?? item.Date)
-          const actual = sanitize(item.Actual)
-          const forecast = sanitize(item.Forecast)
-          const previous = sanitize(item.Previous)
-          const importance = Number(item.Importance ?? item.Impact ?? 0)
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+
+        const payload = (await response.json()) as CalendarApiResponse
+
+        if (!isActive) return
+
+        const calendarEvents = Array.isArray(payload.events) ? payload.events : []
+        const rows = calendarEvents.map<CalendarRow>((event) => {
+          const timeLabel = formatKSTLabel(event.datetime)
+          const actual = sanitize(event.actual)
+          const forecast = sanitize(event.forecast)
+          const previous = sanitize(event.previous)
+          const importanceValue = normalizeImportanceValue(event.importanceValue, event.importance)
+          const category = toNullable(event.category)
+          const reference = toNullable(event.reference)
+          const unit = toNullable(event.unit)
+          const source = toNullable(event.source)
+          const updatedAt = toNullable(event.updatedAt)
+          const updatedAtLabelRaw = updatedAt ? formatKSTLabel(updatedAt) : null
+          const updatedAtLabel = updatedAtLabelRaw && updatedAtLabelRaw !== '—' ? updatedAtLabelRaw : null
+          const url = toNullable(event.url)
+
+          const details = [
+            category ?? null,
+            reference ? `기준 ${reference}` : null,
+            unit ? `단위 ${unit}` : null,
+            source ? `출처 ${source}` : null,
+            updatedAtLabel ? `갱신 ${updatedAtLabel}` : null,
+          ].filter((item): item is string => item !== null)
+
           return {
-            id: `${item.DateUTC ?? item.Date ?? 'unknown'}-${item.Event ?? item.EventName ?? index}`,
+            id: event.id,
             timeLabel,
-            title: sanitize(item.Event ?? item.EventName ?? '—'),
+            title: sanitize(event.title),
+            url: url ?? null,
+            details,
             actual,
             actualTone: detectTone(actual),
             forecast,
             previous,
-            importance,
+            importanceValue,
+            importanceLabel: translateImportance(event.importance),
           }
         })
 
-      setEvents(rows)
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message.includes('Failed to fetch') ? '네트워크 또는 CORS 설정을 확인해주세요.' : err.message)
-      } else {
-        setError('알 수 없는 오류가 발생했습니다.')
-      }
-      setEvents([])
-    } finally {
-      setLoading(false)
-    }
-  }, [range])
+        setEvents(rows)
 
-  useEffect(() => {
+        const metaPayload = payload.meta ?? {}
+        setMeta({
+          source: metaPayload.source ?? 'Trading Economics',
+          startDate: metaPayload.startDate ?? d1,
+          endDate: metaPayload.endDate ?? d2,
+          requestedAt: metaPayload.requestedAt ?? new Date().toISOString(),
+          importanceLabels: metaPayload.importanceLabels ?? [],
+          cacheHit: Boolean(metaPayload.cache?.hit),
+        })
+      } catch (err) {
+        if (!isActive || controller.signal.aborted) {
+          return
+        }
+        if (err instanceof Error) {
+          setError(err.message.includes('Failed to fetch') ? '서버에 연결할 수 없습니다. 백엔드 프록시가 실행 중인지 확인해주세요.' : err.message)
+        } else {
+          setError('알 수 없는 오류가 발생했습니다.')
+        }
+        setEvents([])
+        setMeta(null)
+      } finally {
+        if (isActive) {
+          setLoading(false)
+        }
+      }
+    }
+
     fetchCalendar()
-  }, [fetchCalendar, refreshIndex])
+
+    return () => {
+      isActive = false
+      controller.abort()
+    }
+  }, [range, importanceFilter, refreshIndex])
+
+  const toggleImportance = (value: ImportanceOption) => {
+    setImportanceFilter((prev) => {
+      const exists = prev.includes(value)
+      if (exists) {
+        return prev.filter((item) => item !== value)
+      }
+      const next = [...prev, value]
+      const ordered = importanceOptions
+        .map((option) => option.value)
+        .filter((option) => next.includes(option))
+      return ordered
+    })
+  }
 
   const bodyContent = useMemo(() => {
     if (loading) {
@@ -191,25 +332,82 @@ const EconomicCalendar = () => {
     return events.map((event) => (
       <tr key={event.id}>
         <td>{event.timeLabel}</td>
-        <td>{event.title}</td>
+        <td>
+          <div className="ecal__title">
+            {event.url ? (
+              <a
+                href={event.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ecal__title-link"
+              >
+                {event.title}
+              </a>
+            ) : (
+              <span className="ecal__title-text">{event.title}</span>
+            )}
+            {event.details.length > 0 && (
+              <div className="ecal__title-meta">
+                {event.details.map((detail, index) => (
+                  <span key={`${event.id}-detail-${index}`}>{detail}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        </td>
         <td className={event.actualTone ? `ecal__value ${event.actualTone}` : undefined}>{event.actual}</td>
         <td>{event.forecast}</td>
         <td>{event.previous}</td>
         <td>
-          <span className={pillClass(event.importance)}>
-            {event.importance >= 3 ? '높음' : event.importance === 2 ? '보통' : '낮음'}
+          <span className={pillClass(event.importanceValue)}>
+            {event.importanceLabel}
           </span>
         </td>
       </tr>
     ))
   }, [events, error, loading])
 
+  const metaImportanceSummary = useMemo(() => {
+    if (!meta || meta.importanceLabels.length === 0) {
+      return importanceFilter.length === 0 || importanceFilter.length === importanceOptions.length
+        ? '전체'
+        : importanceFilter
+            .map((option) => importanceOptions.find((item) => item.value === option)?.label ?? option)
+            .join(', ')
+    }
+    return meta.importanceLabels.map((label) => translateImportance(label)).join(', ')
+  }, [importanceFilter, meta])
+
   return (
     <section className="calendar-widget-card" aria-labelledby="economic-calendar-heading">
       <div className="ecal" id="usd-calendar">
         <header className="ecal__header">
-          <h2 id="economic-calendar-heading">미국 경제지표 캘린더</h2>
+          <div className="ecal__heading">
+            <h2 id="economic-calendar-heading">미국 경제지표 캘린더</h2>
+            <div className="ecal__meta" aria-live="polite">
+              <span>조회 기간: {formatDateRange(meta?.startDate, meta?.endDate)}</span>
+              <span>중요도: {metaImportanceSummary}</span>
+              <span>갱신: {formatMetaTimestamp(meta?.requestedAt)}</span>
+              {meta?.cacheHit ? <span>데이터 소스 캐시 사용</span> : null}
+            </div>
+          </div>
           <div className="ecal__controls">
+            <div className="ecal__filters" role="group" aria-label="중요도 필터">
+              {importanceOptions.map((option) => {
+                const isActive = importanceFilter.includes(option.value)
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className="ecal__filter-btn"
+                    aria-pressed={isActive}
+                    onClick={() => toggleImportance(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
             <label htmlFor="calendar-range" className="visually-hidden">
               조회 범위 선택
             </label>
@@ -245,7 +443,10 @@ const EconomicCalendar = () => {
         </div>
 
         <footer className="ecal__footer">
-          <small>Source: Trading Economics</small>
+          <small>
+            Source: {meta?.source ?? 'Trading Economics'} · 조회 기간 {formatDateRange(meta?.startDate, meta?.endDate)} ·{' '}
+            {meta?.cacheHit ? '캐시 데이터 기반' : '실시간 요청'} · 기준 시각 {formatMetaTimestamp(meta?.requestedAt)}
+          </small>
         </footer>
       </div>
     </section>
