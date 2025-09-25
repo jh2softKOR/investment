@@ -65,6 +65,14 @@ npm run build        # 프로덕션 빌드 생성
 npm run preview      # 빌드 검증
 ```
 
+## 서버리스 투자 상담 창구 샘플
+
+프론트엔드 프로젝트와 별개로, 온디바이스 LLM(WebLLM)과 FormSubmit을 이용해 **추가 서버 없이 동작하는 상담 창구 HTML 샘플**을 제공합니다.
+
+- 위치: [`public/consultation.html`](public/consultation.html)
+- 구성: 주간 미국 경제지표 위젯, 온디바이스 투자 Q&A, FormSubmit 기반 문의 메일 폼
+- 사용 방법: 파일을 그대로 배포하거나 브라우저에서 열면 됩니다. 메일 전송 주소만 본인 주소로 교체하세요.
+
 ## 주의 사항
 
 - 외부 API의 CORS 정책이나 호출 제한에 따라 데이터 로드가 지연되거나 실패할 수 있습니다.
