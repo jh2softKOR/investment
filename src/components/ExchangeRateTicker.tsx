@@ -1,9 +1,10 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import {
   fetchFmpQuotes,
-  fetchStooqQuotes,
+  fetchGoldSpotFromMetalsLive,
+  fetchSilverSpotFromMetalsLive,
   fetchUsdKrwFromExchangeRateHost,
-  fetchWtiFromStooq,
+  fetchWtiFromStooqCsv,
   parseNumericValue,
 } from '../utils/marketData'
 import {
@@ -19,8 +20,6 @@ import { shouldUseLiveTickerData } from '../utils/liveDataFlags'
 const wtiSymbol = 'CL=F' as const
 const goldSymbol = 'GC=F' as const
 const silverSymbol = 'SI=F' as const
-const stooqGoldSymbol = 'gc.f' as const
-const stooqSilverSymbol = 'si.f' as const
 const customTickerEndpoint = (import.meta.env.VITE_CUSTOM_TICKER_URL ?? '/data/custom-ticker.json')
   .trim()
 
@@ -340,8 +339,8 @@ const ExchangeRateTicker = () => {
             loader: () => resolveCustomTickerEntry('wti'),
           },
           {
-            name: 'Stooq',
-            loader: () => fetchWtiFromStooq(),
+            name: 'Stooq CSV',
+            loader: () => fetchWtiFromStooqCsv(),
           },
           {
             name: 'Financial Modeling Prep',
@@ -366,11 +365,8 @@ const ExchangeRateTicker = () => {
             loader: () => resolveCustomTickerEntry('gold'),
           },
           {
-            name: 'Stooq',
-            loader: async () => {
-              const quotes = await fetchStooqQuotes([stooqGoldSymbol])
-              return quotes[stooqGoldSymbol] ?? null
-            },
+            name: 'Metals.live',
+            loader: () => fetchGoldSpotFromMetalsLive(),
           },
           {
             name: 'Financial Modeling Prep',
@@ -395,11 +391,8 @@ const ExchangeRateTicker = () => {
             loader: () => resolveCustomTickerEntry('silver'),
           },
           {
-            name: 'Stooq',
-            loader: async () => {
-              const quotes = await fetchStooqQuotes([stooqSilverSymbol])
-              return quotes[stooqSilverSymbol] ?? null
-            },
+            name: 'Metals.live',
+            loader: () => fetchSilverSpotFromMetalsLive(),
           },
           {
             name: 'Financial Modeling Prep',
@@ -519,7 +512,7 @@ const ExchangeRateTicker = () => {
           <span className={goldView.changeClass}>{goldView.fallbackChangeLabel}</span>
         )}
         {goldView.hintLabel && <span className="exchange-rate-hint">{goldView.hintLabel}</span>}
-        <span className="visually-hidden">GC=F · 1분 간격 자동 갱신</span>
+        <span className="visually-hidden">Metals.live Gold · 1분 간격 자동 갱신</span>
       </div>
 
       <div className="exchange-rate-row">
@@ -534,7 +527,7 @@ const ExchangeRateTicker = () => {
           <span className={silverView.changeClass}>{silverView.fallbackChangeLabel}</span>
         )}
         {silverView.hintLabel && <span className="exchange-rate-hint">{silverView.hintLabel}</span>}
-        <span className="visually-hidden">SI=F · 1분 간격 자동 갱신</span>
+        <span className="visually-hidden">Metals.live Silver · 1분 간격 자동 갱신</span>
       </div>
 
       <div className="exchange-rate-row">
@@ -549,7 +542,7 @@ const ExchangeRateTicker = () => {
           <span className={oilView.changeClass}>{oilView.fallbackChangeLabel}</span>
         )}
         {oilView.hintLabel && <span className="exchange-rate-hint">{oilView.hintLabel}</span>}
-        <span className="visually-hidden">CL=F · 1분 간격 자동 갱신</span>
+        <span className="visually-hidden">WTI Stooq CSV · 1분 간격 자동 갱신</span>
       </div>
 
       <div className="exchange-rate-row">
