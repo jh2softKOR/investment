@@ -9,6 +9,15 @@ const resolveAction = () => {
   return configured && /^https?:\/\//i.test(configured) ? configured : DEFAULT_ACTION
 }
 
+const MailIcon = () => (
+  <svg viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
+    <path
+      d="M4.5 5h15a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-11A1.5 1.5 0 0 1 4.5 5zm.75 2.032v10.218h13.5V7.032l-6.343 4.196a1.5 1.5 0 0 1-1.614 0zm1.032-1.532 5.809 3.842a.5.5 0 0 0 .558 0L18.458 5.5z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
 const ConsultationMailForm = () => {
   const action = useMemo(resolveAction, [])
   const [submitting, setSubmitting] = useState(false)
@@ -37,7 +46,14 @@ const ConsultationMailForm = () => {
   return (
     <section className="section consultation-mail" aria-labelledby="consultation-mail-heading">
       <div className="consultation-mail-header">
-        <h2 id="consultation-mail-heading">문의 메일 보내기</h2>
+        <div className="consultation-mail-title section-title">
+          <span className="section-title-icon mail" aria-hidden="true">
+            <MailIcon />
+          </span>
+          <div className="section-title-text">
+            <h2 id="consultation-mail-heading">문의 메일 보내기</h2>
+          </div>
+        </div>
         <p>투자 전략부터 시장 전망까지 궁금한 점을 남겨주세요. JH 컨설턴트가 순차적으로 확인 후 직접 연락드립니다.</p>
       </div>
 
