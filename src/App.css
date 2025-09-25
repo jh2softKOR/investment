@@ -734,141 +734,165 @@
 }
 
 .calendar-widget-card {
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 18px;
-  padding: 1.25rem 1.35rem 1.4rem;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.ecal {
+  background: #0b0b0f;
+  color: #eaeaf0;
+  border-radius: 16px;
+  padding: 1.2rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(63, 63, 77, 0.6);
+}
+
+.ecal__header {
   display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 18px 45px rgba(15, 23, 42, 0.4);
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
 }
 
-.calendar-widget-title {
-  margin: 0 0 0.2rem;
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: #f8fafc;
-}
-
-.calendar-widget-description {
+.ecal__header h2 {
   margin: 0;
-  color: rgba(148, 163, 184, 0.85);
-  line-height: 1.5;
+  font-size: 1.15rem;
+  color: #ffffff;
+}
+
+.ecal__controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.ecal__controls select,
+.ecal__controls button {
+  background: #15151c;
+  color: #eaeaf0;
+  border: 1px solid #2a2a36;
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
   font-size: 0.9rem;
 }
 
-.calendar-widget-frame {
-  border-radius: 14px;
-  overflow: hidden;
-  background: #020617;
-  border: 1px solid rgba(71, 85, 105, 0.55);
-  position: relative;
-  min-height: 33.75rem;
+.ecal__controls button:hover:not(:disabled) {
+  background: #1b1b25;
 }
 
-.calendar-widget-frame iframe {
-  display: block;
+.ecal__controls button:disabled,
+.ecal__controls select:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.ecal__tablewrap {
+  overflow: auto;
+  border: 1px solid #1f1f2a;
+  border-radius: 12px;
+}
+
+.ecal__table {
   width: 100%;
-  border: 0;
-  min-height: 33.75rem;
-  background: #020617;
-  opacity: 0;
-  transition: opacity 0.35s ease;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
-@media (max-width: 640px) {
-  .calendar-widget-frame,
-  .calendar-widget-frame iframe {
-    min-height: 26rem;
-  }
+.ecal__table thead th {
+  position: sticky;
+  top: 0;
+  background: #101018;
+  color: #bfc5d1;
+  text-align: left;
+  font-weight: 600;
+  padding: 0.75rem;
+  border-bottom: 1px solid #1f1f2a;
+  font-size: 0.85rem;
 }
 
-.calendar-widget-frame--ready iframe {
-  opacity: 1;
+.ecal__table tbody td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #1a1a24;
+  font-size: 0.88rem;
 }
 
-.calendar-widget-loader {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.85rem;
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.88));
-  color: rgba(226, 232, 240, 0.9);
-  font-size: 0.95rem;
+.ecal__table tbody tr:hover {
+  background: #13131b;
+}
+
+.ecal__empty {
   text-align: center;
-  padding: 1rem 1.2rem;
+  color: #98a2b3;
+  padding: 1.25rem 0;
 }
 
-.calendar-widget-spinner {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 3px solid rgba(96, 165, 250, 0.25);
-  border-top-color: #60a5fa;
-  animation: calendar-widget-spin 1s linear infinite;
-}
-
-@keyframes calendar-widget-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.calendar-widget-footnote {
-  margin: 0;
-  font-size: 0.78rem;
-  color: rgba(148, 163, 184, 0.75);
-}
-
-.calendar-widget-footnote a {
-  color: #60a5fa;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.calendar-widget-footnote-hint {
-  display: block;
-  margin-top: 0.45rem;
-  color: rgba(226, 232, 240, 0.8);
-}
-
-.calendar-widget-footnote a:hover {
-  text-decoration: underline;
-}
-
-.impact-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.18rem 0.6rem;
+.pill {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
   border-radius: 999px;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 600;
 }
 
-.impact-high {
-  background: rgba(248, 113, 113, 0.25);
-  color: #fca5a5;
-  border: 1px solid rgba(239, 68, 68, 0.35);
+.pill--high {
+  background: #2a1212;
+  color: #ffb3b3;
+  border: 1px solid #5a1a1a;
 }
 
-.impact-medium {
-  background: rgba(251, 191, 36, 0.22);
-  color: #fcd34d;
-  border: 1px solid rgba(217, 119, 6, 0.35);
+.pill--med {
+  background: #1f1a12;
+  color: #ffd9a1;
+  border: 1px solid #5a4a1a;
 }
 
-.impact-low {
-  background: rgba(34, 197, 94, 0.22);
-  color: #86efac;
-  border: 1px solid rgba(34, 197, 94, 0.35);
+.pill--low {
+  background: #121f12;
+  color: #b9ffb3;
+  border: 1px solid #1a5a1a;
+}
+
+.ecal__value {
+  font-weight: 600;
+}
+
+.ecal__value.up {
+  color: #98ff98;
+}
+
+.ecal__value.down {
+  color: #ffa6a6;
+}
+
+.ecal__footer {
+  margin-top: 0.6rem;
+  color: #98a2b3;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .ecal__table thead th:nth-child(4),
+  .ecal__table thead th:nth-child(5),
+  .ecal__table tbody td:nth-child(4),
+  .ecal__table tbody td:nth-child(5) {
+    display: none;
+  }
+
+  .ecal__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .ecal__controls {
+    width: 100%;
+  }
+
+  .ecal__controls select,
+  .ecal__controls button {
+    width: 100%;
+  }
 }
 
 .table-empty {
