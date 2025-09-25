@@ -198,6 +198,161 @@ const fetchJsonWithProxiesFirst = async <T>(url: URL): Promise<T> => {
   return (await response.json()) as T
 }
 
+const parseMetalsLiveEntry = (
+  entry: unknown,
+  metalKey: string,
+): { price: number | null; changePercent: number | null } => {
+  if (entry === null || entry === undefined) {
+    return { price: null, changePercent: null }
+  }
+
+  if (typeof entry === 'number' || typeof entry === 'string') {
+    return { price: parseNumericValue(entry), changePercent: null }
+  }
+
+  if (Array.isArray(entry)) {
+    let price: number | null = null
+    let changePercent: number | null = null
+
+    for (let index = entry.length - 1; index >= 0; index -= 1) {
+      const value = parseNumericValue(entry[index])
+      if (value === null) {
+        continue
+      }
+
+      if (price === null) {
+        price = value
+        continue
+      }
+
+      if (changePercent === null) {
+        changePercent = value
+        break
+      }
+    }
+
+    return { price, changePercent }
+  }
+
+  const record = entry as Record<string, unknown>
+  const priceKeys = [
+    metalKey,
+    'price',
+    'spot',
+    'value',
+    'ask',
+    'bid',
+    'close',
+    'last',
+    'lastPrice',
+    'current',
+  ] as const
+
+  let price: number | null = null
+  for (const key of priceKeys) {
+    price = parseNumericValue(record[key])
+    if (price !== null) {
+      break
+    }
+  }
+
+  const changePercentKeys = [
+    'changePercent',
+    'change_percent',
+    'changePct',
+    'pctChange',
+    'percentChange',
+    'percent_change',
+  ] as const
+
+  let changePercent: number | null = null
+  for (const key of changePercentKeys) {
+    changePercent = parseNumericValue(record[key])
+    if (changePercent !== null) {
+      break
+    }
+  }
+
+  if (changePercent === null) {
+    const changeKeys = ['change', 'delta', 'diff'] as const
+    const previousKeys = [
+      'previous',
+      'previousClose',
+      'prevClose',
+      'prev',
+      'open',
+      'lastClose',
+    ] as const
+
+    let change: number | null = null
+    for (const key of changeKeys) {
+      change = parseNumericValue(record[key])
+      if (change !== null) {
+        break
+      }
+    }
+
+    if (change !== null) {
+      for (const key of previousKeys) {
+        const previous = parseNumericValue(record[key])
+        if (previous !== null && previous !== 0) {
+          changePercent = (change / previous) * 100
+          break
+        }
+      }
+    }
+  }
+
+  if (price === null) {
+    const numericValues = Object.values(record)
+      .map((value) => parseNumericValue(value))
+      .filter((value): value is number => value !== null)
+
+    if (numericValues.length > 0) {
+      price = numericValues[numericValues.length - 1]
+    }
+  }
+
+  return { price, changePercent }
+}
+
+const parseMetalsLiveResponse = (payload: unknown, metalKey: string): PriceInfo | null => {
+  if (Array.isArray(payload)) {
+    const mapped = payload
+      .map((entry) => parseMetalsLiveEntry(entry, metalKey))
+      .filter((entry) => entry.price !== null)
+
+    if (mapped.length === 0) {
+      return null
+    }
+
+    const latest = mapped[mapped.length - 1]
+    if (latest.price === null) {
+      return null
+    }
+
+    let { changePercent } = latest
+    if (changePercent === null) {
+      for (let index = mapped.length - 2; index >= 0; index -= 1) {
+        const previous = mapped[index]
+        if (previous.price !== null && previous.price !== 0) {
+          changePercent = ((latest.price - previous.price) / previous.price) * 100
+          break
+        }
+      }
+    }
+
+    return { price: latest.price, changePercent }
+  }
+
+  const parsed = parseMetalsLiveEntry(payload, metalKey)
+  if (parsed.price === null) {
+    return null
+  }
+
+  return parsed
+}
+
 const fetchUsdKrwFromExchangeRateHost = async (): Promise<PriceInfo | null> => {
   const latestUrl = new URL('https://api.exchangerate.host/latest')
   latestUrl.searchParams.set('base', 'USD')
@@ -436,18 +591,94 @@ const fetchStooqQuotes = async (symbols: string[]): Promise<Record<string, Price
   return mapped
 }
 
-const stooqWtiSymbol = 'cl.f' as const
+const fetchWtiFromStooqCsv = async (): Promise<PriceInfo | null> => {
+  const url = new URL('https://stooq.com/q/l/')
+  url.searchParams.set('s', 'cl.f')
+  url.searchParams.set('f', 'sd2t2ohlcv')
+  url.searchParams.set('h', '')
+  url.searchParams.set('e', 'csv')
 
-const fetchWtiFromStooq = async (): Promise<PriceInfo | null> => {
   try {
-    const quotes = await fetchStooqQuotes([stooqWtiSymbol])
-    return quotes[stooqWtiSymbol] ?? null
+    const response = await fetchWithProxies(url, {
+      headers: { Accept: 'text/csv, text/plain, */*' },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Stooq CSV 응답 오류 (status: ${response.status})`)
+    }
+
+    const text = await response.text()
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'))
+
+    if (lines.length < 2) {
+      return null
+    }
+
+    const headers = lines[0].split(',').map((column) => column.trim().toLowerCase())
+    const values = lines[1].split(',').map((value) => value.trim())
+
+    const columnMap = new Map<string, string>()
+    headers.forEach((header, index) => {
+      columnMap.set(header, values[index] ?? '')
+    })
+
+    const close = parseNumericValue(columnMap.get('close'))
+    const open = parseNumericValue(columnMap.get('open'))
+
+    let changePercent: number | null = null
+    if (close !== null && open !== null && open !== 0) {
+      changePercent = ((close - open) / open) * 100
+    }
+
+    if (close === null) {
+      return null
+    }
+
+    return { price: close, changePercent }
   } catch (error) {
-    console.error('Stooq 국제 유가 데이터 조회 실패', error)
+    console.error('Stooq CSV 국제 유가 데이터 조회 실패', error)
   }
 
   return null
 }
+
+const fetchMetalsLiveSpot = async (metal: 'gold' | 'silver'): Promise<PriceInfo | null> => {
+  const url = new URL(`https://api.metals.live/v1/spot/${metal}`)
+
+  try {
+    const response = await fetchWithProxies(url)
+
+    if (!response.ok) {
+      throw new Error(`Metals.live ${metal} 응답 오류 (status: ${response.status})`)
+    }
+
+    const text = await response.text()
+    if (!text) {
+      return null
+    }
+
+    let payload: unknown
+    try {
+      payload = JSON.parse(text)
+    } catch (error) {
+      console.error(`Metals.live ${metal} JSON 파싱 실패`, error)
+      return null
+    }
+
+    return parseMetalsLiveResponse(payload, metal)
+  } catch (error) {
+    console.error(`Metals.live ${metal} 데이터 조회 실패`, error)
+  }
+
+  return null
+}
+
+const fetchGoldSpotFromMetalsLive = () => fetchMetalsLiveSpot('gold')
+
+const fetchSilverSpotFromMetalsLive = () => fetchMetalsLiveSpot('silver')
 
 const fetchBinanceQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {
   if (!symbols.length) {
@@ -727,11 +958,13 @@ const fetchYahooQuotes = async (symbols: string[]): Promise<Record<string, Price
 export type { PriceInfo }
 export {
   fetchBinanceQuotes,
+  fetchGoldSpotFromMetalsLive,
   fetchFmpQuotes,
   fetchGateIoQuotes,
   fetchInvestingQuotes,
+  fetchSilverSpotFromMetalsLive,
   fetchStooqQuotes,
-  fetchWtiFromStooq,
+  fetchWtiFromStooqCsv,
   fetchUsdKrwFromExchangeRateHost,
   fetchYahooQuotes,
   parseNumericValue,

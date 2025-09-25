@@ -59,11 +59,11 @@ const EconomicCalendar = () => {
       </p>
 
       <div className="calendar-widget-panel">
-        <h3 className="calendar-widget-title">Investing.com 미국 경제지표</h3>
-        <div className="calendar-widget-frame" role="region" aria-label="Investing.com 미국 경제지표 위젯">
+        <h3 className="calendar-widget-title">미국 경제지표</h3>
+        <div className="calendar-widget-frame" role="region" aria-label="미국 경제지표 위젯">
           <iframe
             key={investingCalType}
-            title="Investing.com 미국 경제지표"
+            title="미국 경제지표"
             src={investingWidgetSrc}
             loading="lazy"
             width="100%"
