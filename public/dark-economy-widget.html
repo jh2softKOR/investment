@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>다크 경제 지표 위젯</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-color: #0d1117;
+      --card-color: #161b22;
+      --border-color: #30363d;
+      --text-color: #f0f6fc;
+      --subtext-color: #8b949e;
+      --positive: #2ea043;
+      --negative: #f85149;
+      --neutral: #6e7681;
+      --highlight: #1f6feb;
+      font-family: 'Pretendard', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      background: radial-gradient(circle at top left, rgba(31, 111, 235, 0.18), transparent 55%),
+        radial-gradient(circle at bottom right, rgba(248, 81, 73, 0.18), transparent 45%),
+        var(--bg-color);
+      color: var(--text-color);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .widget {
+      width: min(960px, 95vw);
+      background: rgba(13, 17, 23, 0.85);
+      border: 1px solid rgba(48, 54, 61, 0.6);
+      border-radius: 20px;
+      padding: 28px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      font-size: clamp(1.4rem, 1rem + 1vw, 2rem);
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      letter-spacing: -0.02em;
+    }
+
+    h1 span {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--subtext-color);
+    }
+
+    .timeframe-toggle {
+      display: inline-flex;
+      border: 1px solid var(--border-color);
+      border-radius: 999px;
+      padding: 4px;
+      background: rgba(22, 27, 34, 0.9);
+    }
+
+    .timeframe-toggle button {
+      border: none;
+      background: transparent;
+      color: var(--subtext-color);
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 10px 18px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    .timeframe-toggle button.active {
+      background: var(--highlight);
+      color: #ffffff;
+      box-shadow: 0 8px 18px rgba(31, 111, 235, 0.35);
+    }
+
+    .timeframe-toggle button:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      background: rgba(22, 27, 34, 0.9);
+      border: 1px solid rgba(48, 54, 61, 0.7);
+      border-radius: 18px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(31, 111, 235, 0.6);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .card-title span {
+      color: var(--subtext-color);
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+
+    .price {
+      font-size: 1.65rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .change {
+      font-size: 0.95rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .change[data-trend="up"] {
+      color: var(--positive);
+    }
+
+    .change[data-trend="down"] {
+      color: var(--negative);
+    }
+
+    .change[data-trend="flat"] {
+      color: var(--neutral);
+    }
+
+    .change-badge {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(99, 110, 123, 0.16);
+      color: var(--subtext-color);
+      text-transform: uppercase;
+    }
+
+    .updated {
+      margin-top: 20px;
+      font-size: 0.8rem;
+      color: var(--subtext-color);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    a {
+      color: var(--highlight);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    @media (max-width: 600px) {
+      body {
+        padding: 16px;
+      }
+
+      .widget {
+        padding: 22px;
+      }
+
+      .cards {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="widget" aria-live="polite">
+    <header>
+      <h1>
+        실시간 원자재·환율 위젯
+        <span>금, 은, WTI 원유, 달러/원 환율을 60초마다 갱신합니다.</span>
+      </h1>
+      <div class="timeframe-toggle" role="group" aria-label="기간 선택">
+        <button type="button" class="active" data-timeframe="daily">일간</button>
+        <button type="button" data-timeframe="weekly">주간</button>
+      </div>
+    </header>
+
+    <section class="cards" id="cards" aria-label="지표 카드 목록">
+      <article class="card" data-symbol="gold">
+        <div class="card-header">
+          <div class="card-title">금<span>Gold Spot</span></div>
+          <span class="change-badge">로딩 중</span>
+        </div>
+        <div class="price" data-field="price">--</div>
+        <div class="change" data-field="change" data-trend="flat">대기 중…</div>
+      </article>
+      <article class="card" data-symbol="silver">
+        <div class="card-header">
+          <div class="card-title">은<span>Silver Spot</span></div>
+          <span class="change-badge">로딩 중</span>
+        </div>
+        <div class="price" data-field="price">--</div>
+        <div class="change" data-field="change" data-trend="flat">대기 중…</div>
+      </article>
+      <article class="card" data-symbol="wti">
+        <div class="card-header">
+          <div class="card-title">WTI 원유<span>Light Sweet Crude</span></div>
+          <span class="change-badge">로딩 중</span>
+        </div>
+        <div class="price" data-field="price">--</div>
+        <div class="change" data-field="change" data-trend="flat">대기 중…</div>
+      </article>
+      <article class="card" data-symbol="usdkrw">
+        <div class="card-header">
+          <div class="card-title">달러/원<span>USD → KRW</span></div>
+          <span class="change-badge">로딩 중</span>
+        </div>
+        <div class="price" data-field="price">--</div>
+        <div class="change" data-field="change" data-trend="flat">대기 중…</div>
+      </article>
+    </section>
+
+    <footer class="updated">
+      <div id="last-updated">마지막 갱신: --:--</div>
+      <div>
+        CORS 문제가 발생하면 <a href="#cloudflare-worker">Cloudflare Workers 프록시 예시</a>를 참고하세요.
+      </div>
+    </footer>
+
+    <section id="cloudflare-worker" style="margin-top: 28px;">
+      <h2 style="font-size: 1rem; margin-bottom: 12px;">Cloudflare Workers 프록시 (선택)</h2>
+      <p style="font-size: 0.85rem; color: var(--subtext-color); line-height: 1.5;">
+        일부 브라우저 환경에서 위 API의 CORS가 차단되면 아래 서버리스 코드를 Workers에 배포하고,<br />
+        이 문서의 <code>PROXY_BASE_URL</code> 상수를 해당 워커 URL로 바꿔 사용하세요.
+      </p>
+      <pre style="overflow:auto; background: rgba(12, 16, 23, 0.9); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; font-size: 0.75rem; line-height: 1.4;">
+<code>// 파일: cloudflare-proxy-worker.js
+const ALLOWED_HOSTS = [
+  'api.metals.live',
+  'stooq.com',
+  'api.exchangerate.host'
+];
+
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    const target = url.searchParams.get('url');
+
+    if (!target) {
+      return new Response('Missing "url" parameter', { status: 400 });
+    }
+
+    let upstream;
+    try {
+      upstream = new URL(target);
+    } catch (error) {
+      return new Response('Invalid upstream URL', { status: 400 });
+    }
+
+    if (!ALLOWED_HOSTS.includes(upstream.hostname)) {
+      return new Response('Host not allowed', { status: 403 });
+    }
+
+    const proxiedRequest = new Request(upstream.toString(), {
+      method: request.method,
+      headers: request.headers,
+      body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
+      redirect: 'follow'
+    });
+
+    const response = await fetch(proxiedRequest);
+    const headers = new Headers(response.headers);
+    headers.set('Access-Control-Allow-Origin', '*');
+    headers.set('Access-Control-Allow-Headers', request.headers.get('Access-Control-Request-Headers') || '*');
+    headers.set('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS');
+
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers
+    });
+  }
+};</code>
+      </pre>
+    </section>
+  </main>
+
+  <script>
+    const PROXY_BASE_URL = null; // 예: 'https://your-worker.example.workers.dev/?url='
+    const REFRESH_INTERVAL = 60_000;
+
+    const state = {
+      timeframe: 'daily',
+      data: {}
+    };
+
+    const formatters = {
+      usd(amount, options = {}) {
+        return `US$${new Intl.NumberFormat('en-US', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+          ...options
+        }).format(amount)}`;
+      },
+      krw(amount) {
+        return `₩${new Intl.NumberFormat('ko-KR', {
+          maximumFractionDigits: 0
+        }).format(amount)}`;
+      }
+    };
+
+    const cards = {
+      gold: {
+        label: '금',
+        unit: '트로이온스',
+        format: (value) => formatters.usd(value)
+      },
+      silver: {
+        label: '은',
+        unit: '트로이온스',
+        format: (value) => formatters.usd(value)
+      },
+      wti: {
+        label: 'WTI',
+        unit: '배럴',
+        format: (value) => formatters.usd(value)
+      },
+      usdkrw: {
+        label: 'USD/KRW',
+        unit: '₩',
+        format: (value) => formatters.krw(value)
+      }
+    };
+
+    function withProxy(url) {
+      if (!PROXY_BASE_URL) return url;
+      return `${PROXY_BASE_URL}${encodeURIComponent(url)}`;
+    }
+
+    function parseMetalSeries(raw) {
+      if (!Array.isArray(raw)) return [];
+      return raw
+        .map((entry) => {
+          if (Array.isArray(entry)) {
+            const [timeValue, priceValue] = entry;
+            return {
+              time: parseTimeValue(timeValue),
+              price: Number(priceValue)
+            };
+          }
+          if (entry && typeof entry === 'object') {
+            const { price, value } = entry;
+            const timeValue = entry.time ?? entry.timestamp ?? entry.date ?? entry.datetime ?? entry[0];
+            return {
+              time: parseTimeValue(timeValue),
+              price: Number(price ?? value ?? entry.price)
+            };
+          }
+          return null;
+        })
+        .filter((item) => item && Number.isFinite(item.price) && item.time instanceof Date && !Number.isNaN(item.time.valueOf()))
+        .sort((a, b) => a.time - b.time);
+    }
+
+    function parseTimeValue(value) {
+      if (value == null) return null;
+      if (value instanceof Date) return value;
+      if (typeof value === 'number') {
+        if (value > 1e12) {
+          return new Date(value);
+        }
+        if (value > 1e9) {
+          return new Date(value * 1000);
+        }
+        return new Date(value);
+      }
+      const date = new Date(value);
+      return Number.isNaN(date.valueOf()) ? null : date;
+    }
+
+    function calcChange(series, days) {
+      if (!Array.isArray(series) || series.length === 0) {
+        return null;
+      }
+      const latest = series[series.length - 1];
+      const targetTime = latest.time.getTime() - days * 24 * 60 * 60 * 1000;
+      let reference = null;
+
+      for (let i = series.length - 2; i >= 0; i -= 1) {
+        if (series[i].time.getTime() <= targetTime || i === 0) {
+          reference = series[i];
+          break;
+        }
+      }
+
+      if (!reference) {
+        return null;
+      }
+
+      const change = ((latest.price - reference.price) / reference.price) * 100;
+      return {
+        latestPrice: latest.price,
+        changePercent: change
+      };
+    }
+
+    async function fetchMetals(symbol) {
+      const url = withProxy(`https://api.metals.live/v1/spot/${symbol}`);
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`${symbol} 응답 오류 ${response.status}`);
+      }
+      const raw = await response.json();
+      const series = parseMetalSeries(raw);
+      if (!series.length) {
+        throw new Error(`${symbol} 데이터를 파싱할 수 없습니다.`);
+      }
+      return series;
+    }
+
+    async function fetchWTI() {
+      const url = withProxy('https://stooq.com/q/d/l/?s=cl.f&i=d');
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`WTI 응답 오류 ${response.status}`);
+      }
+      const csv = await response.text();
+      const lines = csv.trim().split(/\r?\n/);
+      const [header, ...rows] = lines;
+      if (!header || rows.length === 0) {
+        throw new Error('WTI CSV 포맷이 비어 있습니다.');
+      }
+      const headers = header.split(',');
+      const dateIndex = headers.indexOf('Date');
+      const closeIndex = headers.indexOf('Close');
+      const series = rows
+        .map((line) => line.split(','))
+        .map((cols) => ({
+          time: parseTimeValue(cols[dateIndex]),
+          price: Number(cols[closeIndex])
+        }))
+        .filter((item) => item.time && Number.isFinite(item.price))
+        .sort((a, b) => a.time - b.time);
+      if (!series.length) {
+        throw new Error('WTI 데이터를 파싱할 수 없습니다.');
+      }
+      return series;
+    }
+
+    async function fetchUsdKrw() {
+      const end = new Date();
+      const start = new Date(end.getTime() - 10 * 24 * 60 * 60 * 1000);
+      const params = new URLSearchParams({
+        base: 'USD',
+        symbols: 'KRW',
+        start_date: start.toISOString().slice(0, 10),
+        end_date: end.toISOString().slice(0, 10)
+      });
+      const url = withProxy(`https://api.exchangerate.host/timeseries?${params.toString()}`);
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`USD/KRW 응답 오류 ${response.status}`);
+      }
+      const data = await response.json();
+      if (!data || !data.rates) {
+        throw new Error('USD/KRW 데이터를 파싱할 수 없습니다.');
+      }
+      const series = Object.entries(data.rates)
+        .map(([date, value]) => ({
+          time: parseTimeValue(date),
+          price: Number(value.KRW)
+        }))
+        .filter((item) => item.time && Number.isFinite(item.price))
+        .sort((a, b) => a.time - b.time);
+      if (!series.length) {
+        throw new Error('USD/KRW 시계열이 비어 있습니다.');
+      }
+      return series;
+    }
+
+    function setCardState(symbol, { latestPrice, changePercent }, timeframe) {
+      const card = document.querySelector(`.card[data-symbol="${symbol}"]`);
+      if (!card) return;
+      const priceField = card.querySelector('[data-field="price"]');
+      const changeField = card.querySelector('[data-field="change"]');
+      const badge = card.querySelector('.change-badge');
+
+      const formatter = cards[symbol]?.format ?? ((value) => value.toFixed(2));
+      priceField.textContent = formatter(latestPrice);
+
+      const trend = changePercent > 0 ? 'up' : changePercent < 0 ? 'down' : 'flat';
+      changeField.dataset.trend = trend;
+      const sign = trend === 'up' ? '+' : trend === 'down' ? '' : '±';
+      const rounded = Math.abs(changePercent) < 0.005 ? 0 : changePercent;
+      changeField.textContent = `${sign}${rounded.toFixed(2)}% ${trend === 'up' ? '상승' : trend === 'down' ? '하락' : '변동 없음'}`;
+
+      badge.textContent = timeframe === 'daily' ? '전일 대비' : '7일 대비';
+    }
+
+    function setCardError(symbol, error) {
+      const card = document.querySelector(`.card[data-symbol="${symbol}"]`);
+      if (!card) return;
+      const priceField = card.querySelector('[data-field="price"]');
+      const changeField = card.querySelector('[data-field="change"]');
+      const badge = card.querySelector('.change-badge');
+      priceField.textContent = '--';
+      changeField.textContent = error.message || '데이터를 불러오지 못했습니다.';
+      changeField.dataset.trend = 'flat';
+      badge.textContent = '오류';
+    }
+
+    function updateAllCards() {
+      const timeframe = state.timeframe;
+      Object.entries(state.data).forEach(([symbol, payload]) => {
+        const dataset = timeframe === 'daily' ? payload.daily : payload.weekly;
+        if (dataset) {
+          setCardState(symbol, dataset, timeframe);
+        }
+      });
+    }
+
+    async function refresh() {
+      const tasks = {
+        gold: fetchMetals('gold'),
+        silver: fetchMetals('silver'),
+        wti: fetchWTI(),
+        usdkrw: fetchUsdKrw()
+      };
+
+      const symbols = Object.keys(tasks);
+
+      await Promise.all(
+        symbols.map(async (symbol) => {
+          try {
+            const series = await tasks[symbol];
+            state.data[symbol] = {
+              daily: calcChange(series, 1),
+              weekly: calcChange(series, 7)
+            };
+            setCardState(symbol, state.data[symbol][state.timeframe], state.timeframe);
+          } catch (error) {
+            console.error(`${symbol} fetch error`, error);
+            state.data[symbol] = {};
+            setCardError(symbol, error);
+          }
+        })
+      );
+
+      const now = new Date();
+      document.getElementById('last-updated').textContent = `마지막 갱신: ${now.toLocaleString('ko-KR')}`;
+    }
+
+    function setupToggle() {
+      const buttons = document.querySelectorAll('.timeframe-toggle button');
+      buttons.forEach((button) => {
+        button.addEventListener('click', () => {
+          const timeframe = button.dataset.timeframe;
+          if (timeframe === state.timeframe) return;
+          state.timeframe = timeframe;
+          buttons.forEach((btn) => btn.classList.toggle('active', btn === button));
+          updateAllCards();
+        });
+      });
+    }
+
+    function initialize() {
+      setupToggle();
+      refresh();
+      setInterval(refresh, REFRESH_INTERVAL);
+    }
+
+    document.addEventListener('DOMContentLoaded', initialize);
+  </script>
+</body>
+</html>
