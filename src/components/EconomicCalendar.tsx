@@ -60,9 +60,6 @@ const EconomicCalendar = () => {
 
       <div className="calendar-widget-panel">
         <h3 className="calendar-widget-title">Investing.com 미국 경제지표</h3>
-        <p className="calendar-widget-description">
-          전체 일정과 색상/언어 설정이 반영된 Investing.com 공식 위젯도 함께 확인해 보세요.
-        </p>
         <div className="calendar-widget-frame" role="region" aria-label="Investing.com 미국 경제지표 위젯">
           <iframe
             key={investingCalType}
@@ -70,7 +67,7 @@ const EconomicCalendar = () => {
             src={investingWidgetSrc}
             loading="lazy"
             width="100%"
-            height="600"
+            height="300"
             frameBorder={0}
           />
         </div>
