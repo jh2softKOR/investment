@@ -3,8 +3,6 @@ import EconomicCalendar from './components/EconomicCalendar'
 import ExchangeRateTicker from './components/ExchangeRateTicker'
 import MarketOverview from './components/MarketOverview'
 import NewsFeed from './components/NewsFeed'
-import ConsultationBoard from './components/ConsultationBoard'
-import ConsultationMailForm from './components/ConsultationMailForm'
 
 function App() {
   return (
@@ -31,12 +29,6 @@ function App() {
           <MarketOverview />
           <NewsFeed />
         </main>
-
-        <ConsultationBoard />
-
-        <div className="consultation-suite">
-          <ConsultationMailForm />
-        </div>
 
         <footer className="footer">
           © {new Date().getFullYear()} JH Investment Lab · 데이터 출처: Investing.com, Binance, Financial Modeling
