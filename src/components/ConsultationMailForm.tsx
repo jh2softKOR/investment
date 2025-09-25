@@ -37,8 +37,8 @@ const ConsultationMailForm = () => {
   return (
     <section className="section consultation-mail" aria-labelledby="consultation-mail-heading">
       <div className="consultation-mail-header">
-        <h2 id="consultation-mail-heading">문의 메일 보내기 (서버리스)</h2>
-        <p>FormSubmit을 활용해 별도 서버 없이도 상담 메일을 수신할 수 있습니다.</p>
+        <h2 id="consultation-mail-heading">문의 메일 보내기</h2>
+        <p>투자 전략부터 시장 전망까지 궁금한 점을 남겨주세요. JH 컨설턴트가 순차적으로 확인 후 직접 연락드립니다.</p>
       </div>
 
       <form
