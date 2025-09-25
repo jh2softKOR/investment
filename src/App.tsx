@@ -4,7 +4,6 @@ import ExchangeRateTicker from './components/ExchangeRateTicker'
 import MarketOverview from './components/MarketOverview'
 import NewsFeed from './components/NewsFeed'
 import ConsultationBoard from './components/ConsultationBoard'
-import ConsultationChat from './components/ConsultationChat'
 import ConsultationMailForm from './components/ConsultationMailForm'
 
 function App() {
@@ -36,7 +35,6 @@ function App() {
         <ConsultationBoard />
 
         <div className="consultation-suite">
-          <ConsultationChat />
           <ConsultationMailForm />
         </div>
 
