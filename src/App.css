@@ -1281,6 +1281,12 @@
   letter-spacing: 0.04em;
 }
 
+.consultation-message-badge--external {
+  color: rgba(254, 249, 195, 0.95);
+  background: rgba(217, 119, 6, 0.28);
+  border-color: rgba(251, 191, 36, 0.45);
+}
+
 .consultation-message-body {
   color: rgba(226, 232, 240, 0.82);
   font-size: 0.95rem;

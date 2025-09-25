@@ -14,6 +14,13 @@ type SubmissionState = 'idle' | 'submitting' | 'success' | 'error'
 const MAX_MESSAGE_LENGTH = 1000
 const MAX_NAME_LENGTH = 40
 const MAX_CONTACT_LENGTH = 120
+const PUBLIC_BOARD_FETCH_URL = 'https://jsonplaceholder.typicode.com/comments'
+const PUBLIC_BOARD_POST_URL = 'https://jsonplaceholder.typicode.com/comments'
+const PUBLIC_BOARD_LIMIT = 15
+const PUBLIC_BOARD_ID_PREFIX = 'public-board-'
+const PUBLIC_BOARD_NOTICE =
+  '공식 상담 서버 연결이 원활하지 않아 공개 상담 게시판 데이터를 임시로 표시합니다. 민감한 개인정보는 남기지 말아 주세요.'
+const PUBLIC_BOARD_TIME_STEP_MS = 90 * 60 * 1000
 
 const formatRelativeTime = (input: string) => {
   const date = new Date(input)
@@ -128,6 +135,127 @@ const openMailClient = (address: string, payload: { name: string; contact?: stri
     console.error('이메일 클라이언트를 여는 중 문제가 발생했습니다.', error)
     return false
   }
+}
+
+type PublicBoardEntry = {
+  id?: number | string | null
+  name?: string | null
+  email?: string | null
+  body?: string | null
+}
+
+const normalizeBoardMessage = (message: string) =>
+  message
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .trim()
+
+const sanitizePublicBoardEntry = (entry: unknown, index: number): ConsultationItem | null => {
+  if (!entry || typeof entry !== 'object') {
+    return null
+  }
+
+  const record = entry as PublicBoardEntry
+  const rawMessage = typeof record.body === 'string' ? record.body : ''
+  const normalizedMessage = normalizeBoardMessage(rawMessage)
+
+  if (!normalizedMessage) {
+    return null
+  }
+
+  const rawName = typeof record.name === 'string' ? record.name.trim() : ''
+  const rawEmail = typeof record.email === 'string' ? record.email.trim() : ''
+  const idSource =
+    typeof record.id === 'number' || typeof record.id === 'string'
+      ? record.id.toString().trim()
+      : `fallback-${index}`
+
+  if (!idSource) {
+    return null
+  }
+
+  const createdAt = new Date(Date.now() - index * PUBLIC_BOARD_TIME_STEP_MS).toISOString()
+
+  return {
+    id: `${PUBLIC_BOARD_ID_PREFIX}${idSource}`,
+    name: rawName || '익명 투자자',
+    contact: rawEmail || null,
+    message: normalizedMessage,
+    createdAt,
+  }
+}
+
+const fetchPublicBoardEntries = async (signal?: AbortSignal) => {
+  const requestUrl = `${PUBLIC_BOARD_FETCH_URL}?_limit=${PUBLIC_BOARD_LIMIT}`
+  const response = await fetch(requestUrl, { signal })
+
+  if (!response.ok) {
+    throw new Error(`공개 상담 게시판 데이터를 불러오지 못했습니다. (${response.status})`)
+  }
+
+  const payload = (await response.json()) as unknown
+  if (!Array.isArray(payload)) {
+    throw new Error('공개 상담 게시판 응답 형식이 올바르지 않습니다.')
+  }
+
+  const normalized = payload
+    .map((entry, index) => sanitizePublicBoardEntry(entry, index))
+    .filter((entry): entry is ConsultationItem => Boolean(entry))
+
+  return normalized
+}
+
+const isLikelyEmail = (value: string | null | undefined) => {
+  if (!value) {
+    return false
+  }
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return false
+  }
+  return /.+@.+\..+/.test(trimmed)
+}
+
+const submitToPublicBoard = async (payload: {
+  name: string
+  contact: string | null
+  message: string
+}) => {
+  const response = await fetch(PUBLIC_BOARD_POST_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      postId: 1,
+      name: payload.name || '익명 투자자',
+      email: isLikelyEmail(payload.contact) ? payload.contact : undefined,
+      body: payload.message,
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`공개 상담 게시판 전송이 실패했습니다. (${response.status})`)
+  }
+
+  const result = (await response.json()) as Partial<PublicBoardEntry>
+  const idSource =
+    typeof result.id === 'number' || typeof result.id === 'string'
+      ? result.id.toString().trim()
+      : `${Date.now()}`
+
+  const createdAt = new Date().toISOString()
+
+  return {
+    id: `${PUBLIC_BOARD_ID_PREFIX}${idSource}`,
+    name: payload.name || '익명 투자자',
+    contact: payload.contact,
+    message: normalizeBoardMessage(payload.message),
+    createdAt,
+  } satisfies ConsultationItem
 }
 
 const buildConsultationApiBase = () => {
@@ -351,6 +479,8 @@ const ConsultationBoard = () => {
   )
   const [lastSubmissionOffline, setLastSubmissionOffline] = useState(false)
   const [mailFallbackUsed, setMailFallbackUsed] = useState(false)
+  const [publicBoardActive, setPublicBoardActive] = useState(false)
+  const [usedPublicBoardFallback, setUsedPublicBoardFallback] = useState(false)
   const mailtoAddress = useMemo(
     () => sanitizeMailtoAddress(import.meta.env.VITE_CONSULTATION_MAILTO),
     [],
@@ -373,6 +503,7 @@ const ConsultationBoard = () => {
       }
       setLoading(true)
       setError(null)
+      setPublicBoardActive(false)
 
       try {
         const requestUrl = appendQuery(consultationApiEndpoint, { limit: '20' })
@@ -391,20 +522,51 @@ const ConsultationBoard = () => {
         const stored = readStoredConsultations()
         const localOnly = stored.filter((entry) => entry.id.startsWith(LOCAL_ONLY_ID_PREFIX))
         updateConsultations(() => [...localOnly, ...entries])
-        setLocalNotice(
+        const noticeParts = [
           localOnly.length > 0
             ? '이전에 전송되지 않은 상담 요청이 목록 상단에 임시 저장되어 있습니다.'
             : null,
-        )
+        ].filter((part): part is string => Boolean(part))
+        setLocalNotice(noticeParts.length > 0 ? noticeParts.join(' ') : null)
+        setPublicBoardActive(false)
       } catch (fetchError) {
         if (signal?.aborted) {
           return
         }
         console.error('상담 내역을 불러오는 중 문제가 발생했습니다.', fetchError)
+
+        try {
+          const publicBoardEntries = await fetchPublicBoardEntries(signal)
+          if (signal?.aborted) {
+            return
+          }
+
+          if (publicBoardEntries.length > 0) {
+            const stored = readStoredConsultations()
+            const localOnly = stored.filter((entry) => entry.id.startsWith(LOCAL_ONLY_ID_PREFIX))
+            updateConsultations(() => [...localOnly, ...publicBoardEntries])
+            const noticeParts = [
+              PUBLIC_BOARD_NOTICE,
+              localOnly.length > 0
+                ? '이전에 전송되지 않은 상담 요청이 목록 상단에 임시 저장되어 있습니다.'
+                : null,
+            ].filter((part): part is string => Boolean(part))
+            setLocalNotice(noticeParts.join(' '))
+            setPublicBoardActive(true)
+            setError(null)
+            return
+          }
+        } catch (publicError) {
+          if (!signal?.aborted) {
+            console.error('공개 상담 게시판 데이터를 불러오는 중 문제가 발생했습니다.', publicError)
+          }
+        }
+
         const stored = readStoredConsultations()
         if (stored.length > 0) {
           updateConsultations(() => stored)
           setLocalNotice('서버 연결이 원활하지 않아 이 기기에 저장된 상담 내역을 표시합니다.')
+          setPublicBoardActive(false)
           setError(null)
         } else {
           setError('상담 내역을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')
@@ -458,6 +620,7 @@ const ConsultationBoard = () => {
       return
     }
 
+    setUsedPublicBoardFallback(false)
     const offlineRecord = createLocalConsultation({
       name,
       contact: contact || null,
@@ -505,6 +668,7 @@ const ConsultationBoard = () => {
       setSubmitError(null)
       setLastSubmissionOffline(false)
       setMailFallbackUsed(false)
+      setUsedPublicBoardFallback(false)
 
       try {
         const response = await fetch(consultationApiEndpoint, {
@@ -578,6 +742,40 @@ const ConsultationBoard = () => {
           return
         }
 
+        try {
+          const publicBoardRecord = await submitToPublicBoard({
+            name,
+            contact: contact || null,
+            message,
+          })
+
+          updateConsultations((current) => {
+            const deduped = current.filter((entry) => entry.id !== publicBoardRecord.id)
+            return [publicBoardRecord, ...deduped]
+          })
+
+          const storedAfterSubmission = readStoredConsultations()
+          const noticeParts = [
+            PUBLIC_BOARD_NOTICE,
+            hasLocalOnlyConsultations(storedAfterSubmission)
+              ? '이전에 전송되지 않은 상담 요청이 목록 상단에 임시 저장되어 있습니다.'
+              : null,
+          ].filter((part): part is string => Boolean(part))
+
+          setForm({ name: '', contact: '', message: '' })
+          setSubmitState('success')
+          setSubmitError(null)
+          setLastSubmissionOffline(false)
+          setMailFallbackUsed(false)
+          setUsedPublicBoardFallback(true)
+          setPublicBoardActive(true)
+          setLocalNotice(noticeParts.join(' '))
+          setError(null)
+          return
+        } catch (publicBoardError) {
+          console.error('공개 상담 게시판 전송 실패', publicBoardError)
+        }
+
         const offlineRecord = createLocalConsultation({
           name,
           contact: contact || null,
@@ -627,6 +825,9 @@ const ConsultationBoard = () => {
 
   const submitHelperText = useMemo(() => {
     if (submitState === 'success') {
+      if (usedPublicBoardFallback) {
+        return '공식 상담 서버가 불안정해 공개 상담 게시판으로 상담 내용을 임시 공유했습니다. 민감한 개인정보는 남기지 말고, 서버 복구 후 다시 전송해 주세요.'
+      }
       if (lastSubmissionOffline) {
         return mailFallbackUsed
           ? '네트워크가 불안정해 이메일 앱으로 상담 내용을 보내도록 안내했습니다. 메일 발송함을 확인해 주세요.'
@@ -640,7 +841,14 @@ const ConsultationBoard = () => {
     return mailtoAddress
       ? '연락 가능한 이메일 또는 전화번호를 남겨주시거나, 아래 이메일 버튼으로 직접 상담을 전송하실 수 있습니다.'
       : '연락 가능한 이메일 또는 전화번호를 남겨주시면 빠르게 회신드리겠습니다.'
-  }, [lastSubmissionOffline, mailFallbackUsed, mailtoAddress, submitError, submitState])
+  }, [
+    lastSubmissionOffline,
+    mailFallbackUsed,
+    mailtoAddress,
+    submitError,
+    submitState,
+    usedPublicBoardFallback,
+  ])
 
   return (
     <section className="section consultation-board" aria-label="JH 컨설턴트 상담창구">
@@ -748,6 +956,9 @@ const ConsultationBoard = () => {
                     <div className="consultation-message-header">
                       <span className="consultation-message-name">{item.name}</span>
                       {item.contact && <span className="consultation-message-contact">{item.contact}</span>}
+                      {item.id.startsWith(PUBLIC_BOARD_ID_PREFIX) && (
+                        <span className="consultation-message-badge consultation-message-badge--external">공개 게시판</span>
+                      )}
                       {item.id.startsWith(LOCAL_ONLY_ID_PREFIX) && (
                         <span className="consultation-message-badge">임시 저장</span>
                       )}
@@ -774,6 +985,12 @@ const ConsultationBoard = () => {
           <>
             {' '}
             이메일 상담: <a href={`mailto:${mailtoAddress}`}>{mailtoAddress}</a>
+          </>
+        )}
+        {publicBoardActive && (
+          <>
+            {' '}
+            현재는 공개 상담 게시판 데이터를 임시로 제공하고 있습니다. 민감한 개인정보는 남기지 말아 주세요.
           </>
         )}
       </p>

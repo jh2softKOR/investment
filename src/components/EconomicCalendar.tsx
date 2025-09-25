@@ -135,7 +135,7 @@ const fallbackTemplates: FallbackEventTemplate[] = [
 
 const INVESTING_CALENDAR_PAGE_URL = 'https://www.investing.com/economic-calendar/'
 const INVESTING_WIDGET_EMBED_URL =
-  'https://sslecal2.investing.com/events_economic_calendar.php?importance=3&country=5&columns=exc_country,exc_importance,exc_actual,exc_forecast,exc_previous&theme=dark'
+  'https://sslecal2.forexprostools.com/?importance=3&country=5&columns=exc_country,exc_importance,exc_actual,exc_forecast,exc_previous&calType=week&timeZone=88&lang=51&theme=dark'
 const INVESTING_WIDGET_LOAD_TIMEOUT_MS = 8000
 const INVESTING_WIDGET_NOTICE =
   'Trading Economics API 연결이 원활하지 않아 Investing.com 위젯을 불러오고 있습니다. 위젯이 표시되지 않으면 공식 페이지에서 최신 일정을 확인하세요.'
