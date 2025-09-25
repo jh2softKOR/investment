@@ -247,7 +247,7 @@ const ConsultationChat = () => {
   return (
     <section className="section consultation-ai" aria-labelledby="consultation-ai-heading">
       <div className="consultation-ai-header">
-        <h2 id="consultation-ai-heading">투자상담 · 질의응답 (서버/토큰 불필요)</h2>
+        <h2 id="consultation-ai-heading">투자상담 창구</h2>
         <p>
           브라우저에서 직접 실행되는 온디바이스 LLM으로 간단한 투자 Q&amp;A를 도와드립니다. 실시간 시세 등 최신 데이터가 필요한
           경우에는 별도로 안내해 드려요.
@@ -290,7 +290,6 @@ const ConsultationChat = () => {
       <div className="consultation-ai-meta">
         <span className="consultation-pill">온디바이스 LLM</span>
         <span className="consultation-pill">Llama 3.2 1B-Instruct (Q4)</span>
-        <span className="consultation-pill">네트워크 없이 동작</span>
       </div>
     </section>
   )

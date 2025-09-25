@@ -51,7 +51,7 @@
 
     <!-- 2) 투자상담 Q&A (브라우저 내 LLM: WebLLM) -->
     <section class="card" id="qa">
-      <h2>투자상담 · 질의응답 (서버/토큰 불필요)</h2>
+      <h2>투자상담 창구</h2>
       <div class="body">
         <div class="row">
           <input id="q" type="text" placeholder="질문을 입력하세요 (예: 이번 주 CPI 발표가 시장에 미칠 영향은?)" style="flex:1" />
@@ -62,15 +62,15 @@
         <div class="small muted mt8">
           <span class="pill">온디바이스 LLM</span>
           <span class="pill">Llama 3.2 1B-Instruct (Q4)</span>
-          <span class="pill">네트워크 없이 동작</span>
         </div>
       </div>
     </section>
 
     <!-- 3) 투자상담 메일 보내기 (FormSubmit 무료) -->
     <section class="card">
-      <h2>문의 메일 보내기 (서버리스)</h2>
+      <h2>문의 메일 보내기</h2>
       <div class="body">
+        <p class="muted">투자 전략부터 시장 전망까지 궁금한 점을 남겨주세요. JH 컨설턴트가 순차적으로 확인 후 직접 연락드립니다.</p>
         <!-- ✅ 아래 action 이메일만 본인 주소로 교체하세요 -->
         <form id="contact" action="https://formsubmit.co/jh2soft@naver.com" method="POST">
           <!-- FormSubmit 옵션 -->
