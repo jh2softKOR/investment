@@ -3,6 +3,7 @@ import EconomicCalendar from './components/EconomicCalendar'
 import ExchangeRateTicker from './components/ExchangeRateTicker'
 import MarketOverview from './components/MarketOverview'
 import NewsFeed from './components/NewsFeed'
+import ConsultationMailForm from './components/ConsultationMailForm'
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
           <EconomicCalendar />
           <MarketOverview />
           <NewsFeed />
+          <ConsultationMailForm />
         </main>
 
         <footer className="footer">
