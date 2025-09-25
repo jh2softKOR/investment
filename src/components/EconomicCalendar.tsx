@@ -45,6 +45,8 @@ type GroupedCalendarEvents = {
 }
 
 const API_ENDPOINT = '/api/trading-economics/calendar'
+const INVESTING_WIDGET_SRC =
+  'https://sslecal2.investing.com?columns=exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&importance=3&countries=5&timeZone=9'
 const IMPORTANCE_LEVELS = [3, 2, 1]
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000
 
@@ -213,6 +215,11 @@ const EconomicCalendar = () => {
   }, [upcomingEvents])
 
   const rangeLabel = range === 'daily' ? '오늘 이후 1일' : '오늘 이후 7일'
+  const investingCalType = range === 'daily' ? 'day' : 'week'
+  const investingWidgetSrc = useMemo(
+    () => `${INVESTING_WIDGET_SRC}&calType=${investingCalType}`,
+    [investingCalType],
+  )
 
   const metaRangeLabel = useMemo(() => {
     if (!meta) {
@@ -258,7 +265,9 @@ const EconomicCalendar = () => {
         </div>
       </div>
 
-      <p className="calendar-helper">Investing.com 위젯 대신 Trading Economics 데이터를 활용하여 오늘 이후 예정된 주요 지표만 제공합니다.</p>
+      <p className="calendar-helper">
+        Trading Economics 데이터를 기반으로 정제한 일정과 Investing.com 위젯을 함께 제공합니다.
+      </p>
 
       {metaRangeLabel ? <p className="calendar-meta">{metaRangeLabel}</p> : null}
 
@@ -335,6 +344,24 @@ const EconomicCalendar = () => {
             </tbody>
           </table>
         ) : null}
+      </div>
+
+      <div className="calendar-widget-panel">
+        <h3 className="calendar-widget-title">Investing.com 미국 경제지표</h3>
+        <p className="calendar-widget-description">
+          전체 일정과 색상/언어 설정이 반영된 Investing.com 공식 위젯도 함께 확인해 보세요.
+        </p>
+        <div className="calendar-widget-frame" role="region" aria-label="Investing.com 미국 경제지표 위젯">
+          <iframe
+            key={investingCalType}
+            title="Investing.com 미국 경제지표"
+            src={investingWidgetSrc}
+            loading="lazy"
+            width="100%"
+            height="600"
+            frameBorder={0}
+          />
+        </div>
       </div>
 
       <footer className="calendar-footer">
