@@ -91,9 +91,11 @@
   padding: 0.35rem;
 }
 
-.hero-title-icon svg {
+.hero-title-icon img {
   width: 100%;
   height: 100%;
+  object-fit: cover;
+  border-radius: 18px;
 }
 
 .hero p {
