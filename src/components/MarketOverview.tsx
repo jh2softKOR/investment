@@ -6,6 +6,7 @@ import {
   fetchBinanceQuotes,
   fetchFmpQuotes,
   fetchGateIoQuotes,
+  fetchInvestingQuotes,
   fetchStooqQuotes,
   fetchYahooQuotes,
 } from '../utils/marketData'
@@ -13,7 +14,7 @@ import { fallbackMarketNotice, fallbackMarketPrices } from '../utils/fallbackDat
 import type { PriceInfo } from '../utils/marketData'
 import { shouldUseLiveMarketData } from '../utils/liveDataFlags'
 
-const priceProviders = ['stooq', 'binance', 'gateio', 'fmp', 'yahoo'] as const
+const priceProviders = ['investing', 'stooq', 'binance', 'gateio', 'fmp', 'yahoo'] as const
 type PriceProvider = (typeof priceProviders)[number]
 
 const createProviderStatusState = (initial: 'idle' | 'loading' | 'error' = 'loading') =>
@@ -29,6 +30,7 @@ const createProviderMessageState = (initial: string | null = null) =>
   >
 
 const providerDisplayNames: Record<PriceProvider, string> = {
+  investing: 'Investing.com',
   stooq: 'Stooq',
   binance: 'Binance',
   gateio: 'Gate.io',
@@ -58,6 +60,7 @@ const assets: AssetConfig[] = [
     subtitle: '미국 기술주의 흐름을 가늠하는 대표 지수',
     chartSymbol: 'NASDAQ:IXIC',
     priceSources: [
+      { provider: 'investing', symbol: 'nasdaq-composite' },
       { provider: 'stooq', symbol: '^IXIC' },
       { provider: 'fmp', symbol: '^IXIC' },
       { provider: 'yahoo', symbol: '^IXIC' },
@@ -71,6 +74,7 @@ const assets: AssetConfig[] = [
     subtitle: '전통 우량주 중심의 벤치마크 지수',
     chartSymbol: 'DJI',
     priceSources: [
+      { provider: 'investing', symbol: 'dow-jones-30' },
       { provider: 'stooq', symbol: '^DJI' },
       { provider: 'fmp', symbol: '^DJI' },
       { provider: 'yahoo', symbol: '^DJI' },
@@ -153,6 +157,7 @@ const MarketOverview = () => {
       priceProviders.map((provider) => [provider, Array.from(symbolSets[provider])])
     ) as Record<PriceProvider, string[]>
   }, [])
+  const investingSymbols = providerSymbols.investing
   const binanceSymbols = providerSymbols.binance
   const gateIoSymbols = providerSymbols.gateio
   const fmpSymbols = providerSymbols.fmp
@@ -184,6 +189,9 @@ const MarketOverview = () => {
         promise: Promise<Record<string, PriceInfo>>
       }> = []
       const disabledProviders: PriceProvider[] = []
+      if (investingSymbols.length) {
+        tasks.push({ provider: 'investing', promise: fetchInvestingQuotes(investingSymbols) })
+      }
       if (binanceSymbols.length) {
         tasks.push({ provider: 'binance', promise: fetchBinanceQuotes(binanceSymbols) })
       }
@@ -410,6 +418,7 @@ const MarketOverview = () => {
     fmpApiKey,
     fmpSymbols,
     gateIoSymbols,
+    investingSymbols,
     stooqSymbols,
     useLiveMarketData,
     yahooSymbols,

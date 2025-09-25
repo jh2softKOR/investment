@@ -48,6 +48,146 @@ type YahooQuoteResponse = {
   }
 }
 
+type UnknownRecord = Record<string, unknown>
+
+type InvestingQuoteResponse = {
+  data?: unknown
+  quote?: unknown
+  quotes?: unknown
+  instrument?: unknown
+  financialData?: unknown
+}
+
+const investingPriceKeys = [
+  'last',
+  'last_price',
+  'lastPrice',
+  'last_close',
+  'lastClose',
+  'price',
+  'last_value',
+  'lastValue',
+  'close',
+  'ltp',
+  'value',
+  'trade_price',
+] as const
+
+const investingChangePercentKeys = [
+  'changePct',
+  'change_pct',
+  'changePercentage',
+  'change_percentage',
+  'changePercent',
+  'change_percent',
+  'pctChange',
+  'pct_change',
+  'change_percent_number',
+  'change_percentage_number',
+] as const
+
+const investingChangeKeys = [
+  'change',
+  'day_change',
+  'change_value',
+  'change_value_number',
+] as const
+
+const investingPreviousCloseKeys = [
+  'prevClose',
+  'previousClose',
+  'prev_close',
+  'previous_close',
+  'last_close',
+  'lastClose',
+] as const
+
+const findInvestingQuoteCandidate = (input: unknown, visited = new Set<unknown>()): UnknownRecord | null => {
+  if (!input || typeof input !== 'object') {
+    return null
+  }
+
+  if (visited.has(input)) {
+    return null
+  }
+  visited.add(input)
+
+  if (Array.isArray(input)) {
+    for (const item of input) {
+      const found = findInvestingQuoteCandidate(item, visited)
+      if (found) {
+        return found
+      }
+    }
+    return null
+  }
+
+  const record = input as UnknownRecord
+  const keys = Object.keys(record)
+  const hasPriceKey = keys.some((key) => investingPriceKeys.includes(key as (typeof investingPriceKeys)[number]))
+  if (hasPriceKey) {
+    return record
+  }
+
+  for (const value of Object.values(record)) {
+    const found = findInvestingQuoteCandidate(value, visited)
+    if (found) {
+      return found
+    }
+  }
+
+  return null
+}
+
+const pickInvestingValue = (entry: UnknownRecord, keys: readonly string[]) => {
+  for (const key of keys) {
+    if (!(key in entry)) {
+      continue
+    }
+    const value = entry[key]
+    const parsed = parseNumericValue(value)
+    if (parsed !== null) {
+      return parsed
+    }
+  }
+  return null
+}
+
+const parseInvestingQuoteEntry = (entry: UnknownRecord | null): PriceInfo | null => {
+  if (!entry) {
+    return null
+  }
+
+  const price = pickInvestingValue(entry, investingPriceKeys)
+
+  let changePercent = pickInvestingValue(entry, investingChangePercentKeys)
+
+  if (changePercent === null) {
+    const change = pickInvestingValue(entry, investingChangeKeys)
+    if (change !== null) {
+      const previousClose = pickInvestingValue(entry, investingPreviousCloseKeys)
+
+      if (previousClose !== null && previousClose !== 0) {
+        changePercent = (change / previousClose) * 100
+      } else if (price !== null) {
+        const inferredPrevious = price - change
+        if (inferredPrevious !== 0) {
+          changePercent = (change / inferredPrevious) * 100
+        }
+      }
+    }
+  }
+
+  if (price === null && changePercent === null) {
+    return null
+  }
+
+  return {
+    price,
+    changePercent,
+  }
+}
+
 const fetchJsonWithProxiesFirst = async <T>(url: URL): Promise<T> => {
   const response = await fetchWithProxies(url)
 
@@ -427,6 +567,61 @@ const fetchGateIoQuotes = async (symbols: string[]): Promise<Record<string, Pric
   return mapped
 }
 
+const investingRequestHeaders = {
+  Accept: 'application/json, text/plain, */*',
+  'X-Requested-With': 'XMLHttpRequest',
+}
+
+const fetchInvestingQuote = async (symbol: string): Promise<{ symbol: string; info: PriceInfo } | null> => {
+  const url = new URL(`https://api.investing.com/api/financialdata/${symbol}`)
+  url.searchParams.set('locale', 'ko_KR')
+  url.searchParams.set('lang', 'ko')
+
+  try {
+    const response = await fetchWithProxies(url, { headers: investingRequestHeaders })
+    if (!response.ok) {
+      throw new Error(`Investing.com ${symbol} 응답 오류 (status: ${response.status})`)
+    }
+
+    const payload = (await response.json()) as InvestingQuoteResponse
+    const candidate =
+      findInvestingQuoteCandidate(payload?.data) ??
+      findInvestingQuoteCandidate(payload?.quote) ??
+      findInvestingQuoteCandidate(payload?.quotes) ??
+      findInvestingQuoteCandidate(payload?.financialData) ??
+      findInvestingQuoteCandidate(payload)
+
+    const info = parseInvestingQuoteEntry(candidate)
+    if (!info) {
+      throw new Error('시세 데이터가 포함되지 않은 응답입니다.')
+    }
+
+    return { symbol, info }
+  } catch (error) {
+    console.error(`Investing.com ${symbol} 시세 조회 실패`, error)
+  }
+
+  return null
+}
+
+const fetchInvestingQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {
+  if (!symbols.length) {
+    return {}
+  }
+
+  const results = await Promise.all(symbols.map((symbol) => fetchInvestingQuote(symbol)))
+
+  const mapped: Record<string, PriceInfo> = {}
+  results.forEach((entry) => {
+    if (!entry) {
+      return
+    }
+    mapped[entry.symbol] = entry.info
+  })
+
+  return mapped
+}
+
 const fetchFmpQuotes = async (
   symbols: string[],
   apiKey?: string
@@ -534,6 +729,7 @@ export {
   fetchBinanceQuotes,
   fetchFmpQuotes,
   fetchGateIoQuotes,
+  fetchInvestingQuotes,
   fetchStooqQuotes,
   fetchWtiFromStooq,
   fetchUsdKrwFromExchangeRateHost,
