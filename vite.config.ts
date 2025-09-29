@@ -17,6 +17,11 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/api/quotes': {
+        target: 'http://localhost:4174',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
 })
