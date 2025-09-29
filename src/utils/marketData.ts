@@ -48,6 +48,14 @@ type YahooQuoteResponse = {
   }
 }
 
+type YahooProxyQuoteEntry = {
+  symbol?: string
+  price?: number | string | null
+  prevClose?: number | string | null
+  change?: number | string | null
+  changePct?: number | string | null
+}
+
 type UnknownRecord = Record<string, unknown>
 
 type InvestingQuoteResponse = {
@@ -955,11 +963,51 @@ const fetchYahooQuotes = async (symbols: string[]): Promise<Record<string, Price
   return mapped
 }
 
+const fetchYahooProxyQuotes = async (): Promise<Record<string, PriceInfo>> => {
+  const response = await fetch('/api/quotes', {
+    cache: 'no-store',
+    credentials: 'same-origin',
+  })
+
+  if (!response.ok) {
+    throw new Error(`로컬 Yahoo Finance 프록시 응답 오류 (status: ${response.status})`)
+  }
+
+  const payload = (await response.json()) as YahooProxyQuoteEntry[]
+
+  const mapped: Record<string, PriceInfo> = {}
+  payload.forEach((entry) => {
+    if (!entry?.symbol) {
+      return
+    }
+
+    const price = parseNumericValue(entry.price)
+    const previousClose = parseNumericValue(entry.prevClose)
+    let changePercent = parseNumericValue(entry.changePct)
+
+    if (changePercent === null) {
+      const change = parseNumericValue(entry.change)
+
+      if (change !== null && previousClose !== null && previousClose !== 0) {
+        changePercent = (change / previousClose) * 100
+      }
+    }
+
+    mapped[entry.symbol] = {
+      price,
+      changePercent,
+    }
+  })
+
+  return mapped
+}
+
 export type { PriceInfo }
 export {
   fetchBinanceQuotes,
   fetchGoldSpotFromMetalsLive,
   fetchFmpQuotes,
+  fetchYahooProxyQuotes,
   fetchGateIoQuotes,
   fetchInvestingQuotes,
   fetchSilverSpotFromMetalsLive,

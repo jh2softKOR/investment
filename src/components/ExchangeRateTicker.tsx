@@ -5,6 +5,7 @@ import {
   fetchSilverSpotFromMetalsLive,
   fetchUsdKrwFromExchangeRateHost,
   fetchWtiFromStooqCsv,
+  fetchYahooProxyQuotes,
   parseNumericValue,
 } from '../utils/marketData'
 import {
@@ -203,6 +204,7 @@ const ExchangeRateTicker = () => {
     }
 
     type CommodityConfig = {
+      symbol: string
       label: string
       fallbackInfo: PriceInfo
       setInfo: Dispatch<SetStateAction<PriceInfo | null>>
@@ -211,7 +213,10 @@ const ExchangeRateTicker = () => {
       fetchers: Array<{ name: string; loader: () => Promise<PriceInfo | null> }>
     }
 
-    const resolveRate = async (showLoading: boolean) => {
+    const resolveRate = async (
+      showLoading: boolean,
+      proxyQuotes: Record<string, PriceInfo> | null
+    ) => {
       if (!active) {
         return
       }
@@ -221,6 +226,10 @@ const ExchangeRateTicker = () => {
       }
 
       const rateFetchers: Array<{ name: string; loader: () => Promise<PriceInfo | null> }> = [
+        {
+          name: 'Yahoo Finance 프록시',
+          loader: async () => proxyQuotes?.[rateSymbol] ?? null,
+        },
         { name: '사용자 지정 데이터', loader: () => resolveCustomTickerEntry('usdKrw') },
         { name: 'ExchangeRate.host', loader: () => fetchUsdKrwFromExchangeRateHost() },
       ]
@@ -255,7 +264,11 @@ const ExchangeRateTicker = () => {
       applyRateFallback()
     }
 
-    const resolveCommodity = async (showLoading: boolean, config: CommodityConfig) => {
+    const resolveCommodity = async (
+      showLoading: boolean,
+      config: CommodityConfig,
+      proxyQuotes: Record<string, PriceInfo> | null
+    ) => {
       if (!active) {
         return
       }
@@ -287,7 +300,15 @@ const ExchangeRateTicker = () => {
 
       let lastAttempt: PriceInfo | null = null
 
-      for (const fetcher of config.fetchers) {
+      const fetchers: Array<{ name: string; loader: () => Promise<PriceInfo | null> }> = [
+        {
+          name: 'Yahoo Finance 프록시',
+          loader: async () => proxyQuotes?.[config.symbol] ?? null,
+        },
+        ...config.fetchers,
+      ]
+
+      for (const fetcher of fetchers) {
         let result: PriceInfo | null = null
 
         try {
@@ -326,9 +347,13 @@ const ExchangeRateTicker = () => {
       applyCommodityFallback()
     }
 
-    const resolveOil = (showLoading: boolean) =>
+    const resolveOil = (
+      showLoading: boolean,
+      proxyQuotes: Record<string, PriceInfo> | null
+    ) =>
       resolveCommodity(showLoading, {
-        label: '국제 유가',
+        symbol: wtiSymbol,
+        label: '국제 유가 (WTI)',
         fallbackInfo: fallbackWti,
         setInfo: setOil,
         setStatus: setOilStatus,
@@ -350,11 +375,15 @@ const ExchangeRateTicker = () => {
             },
           },
         ],
-      })
+      }, proxyQuotes)
 
-    const resolveGold = (showLoading: boolean) =>
+    const resolveGold = (
+      showLoading: boolean,
+      proxyQuotes: Record<string, PriceInfo> | null
+    ) =>
       resolveCommodity(showLoading, {
-        label: '국제 금',
+        symbol: goldSymbol,
+        label: '국제 금 (Gold)',
         fallbackInfo: fallbackGold,
         setInfo: setGold,
         setStatus: setGoldStatus,
@@ -376,11 +405,15 @@ const ExchangeRateTicker = () => {
             },
           },
         ],
-      })
+      }, proxyQuotes)
 
-    const resolveSilver = (showLoading: boolean) =>
+    const resolveSilver = (
+      showLoading: boolean,
+      proxyQuotes: Record<string, PriceInfo> | null
+    ) =>
       resolveCommodity(showLoading, {
-        label: '국제 은',
+        symbol: silverSymbol,
+        label: '국제 은 (Silver)',
         fallbackInfo: fallbackSilver,
         setInfo: setSilver,
         setStatus: setSilverStatus,
@@ -402,14 +435,22 @@ const ExchangeRateTicker = () => {
             },
           },
         ],
-      })
+      }, proxyQuotes)
 
     const loadAll = async (showLoading: boolean) => {
+      let proxyQuotes: Record<string, PriceInfo> | null = null
+
+      try {
+        proxyQuotes = await fetchYahooProxyQuotes()
+      } catch (error) {
+        console.error('Yahoo Finance 프록시 시세 로딩 실패', error)
+      }
+
       await Promise.all([
-        resolveRate(showLoading),
-        resolveOil(showLoading),
-        resolveGold(showLoading),
-        resolveSilver(showLoading),
+        resolveRate(showLoading, proxyQuotes),
+        resolveOil(showLoading, proxyQuotes),
+        resolveGold(showLoading, proxyQuotes),
+        resolveSilver(showLoading, proxyQuotes),
       ])
     }
 
