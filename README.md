@@ -43,6 +43,8 @@ VITE_ALPHA_VANTAGE_KEY=your_alpha_vantage_key
 # VITE_ENABLE_LIVE_SENTIMENT_DATA=1
 # 사용자 지정 시세 JSON을 활용하려면 경로를 지정합니다. (기본값: /data/custom-ticker.json)
 # VITE_CUSTOM_TICKER_URL=/data/custom-ticker.json
+# 네이버 국제 시세 Cloudflare Worker 주소를 지정하면 해당 데이터를 최우선으로 사용합니다.
+# VITE_NAVER_WORKER_URL=https://your-worker-name.your-subdomain.workers.dev/api/quotes
 
 # backend/.env (예시)
 TRADING_ECONOMICS_API_KEY=guest:guest
@@ -92,6 +94,15 @@ npm run preview      # 빌드 검증
 
 - `changePercent`가 없다면 `change`와 `previousClose` 값으로 등락률을 계산하며, 데이터가 비어 있는 항목은 자동으로 다음 공급자로
   넘어갑니다.
+
+## 네이버 국제 시세 Cloudflare Worker 연동
+
+- [`workers/naver/worker.js`](workers/naver/worker.js)에 포함된 Cloudflare Worker 샘플은 네이버 금융 실시간 API를 호출해 원/달러 환율,
+  국제 금, 은, 유가 시세를 JSON 배열로 반환합니다.
+- Cloudflare Dashboard → **Workers & Pages** → **Create Worker**에서 새 워커를 만든 뒤, 샘플 코드를 그대로 붙여 넣고 저장/배포합니다.
+- 배포 URL 예시: `https://your-worker-name.your-subdomain.workers.dev/api/quotes`
+- 프론트엔드 `.env` 파일에 `VITE_NAVER_WORKER_URL`을 위 URL로 지정하면, 시세 티커는 네이버 워커 데이터를 최우선으로 사용하고,
+  실패 시 기존 Yahoo Finance·Financial Modeling Prep·Metals.live 데이터로 자동 폴백합니다.
 
 ## 주의 사항
 
