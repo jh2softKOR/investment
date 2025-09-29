@@ -968,8 +968,6 @@ const fetchYahooQuotes = async (symbols: string[]): Promise<Record<string, Price
   return mapYahooQuoteEntries(payload?.quoteResponse?.result)
 }
 
-const yahooProxyFallbackSymbols = ['GC=F', 'SI=F', 'CL=F', 'USDKRW=X'] as const
-
 const fetchYahooProxyQuotesFromLocal = async (): Promise<Record<string, PriceInfo>> => {
   const response = await fetch('/api/quotes', {
     cache: 'no-store',
@@ -1009,45 +1007,8 @@ const fetchYahooProxyQuotesFromLocal = async (): Promise<Record<string, PriceInf
   return mapped
 }
 
-const fetchYahooQuotesThroughAllOrigins = async (): Promise<Record<string, PriceInfo>> => {
-  const yahooUrl = new URL('https://query1.finance.yahoo.com/v7/finance/quote')
-  yahooUrl.searchParams.set('symbols', yahooProxyFallbackSymbols.join(','))
-
-  const proxyUrl = new URL('https://api.allorigins.win/get')
-  proxyUrl.searchParams.set('url', yahooUrl.toString())
-
-  const response = await fetch(proxyUrl.toString(), {
-    cache: 'no-store',
-    credentials: 'omit',
-  })
-
-  if (!response.ok) {
-    throw new Error(`AllOrigins 프록시 응답 오류 (status: ${response.status})`)
-  }
-
-  const payload = (await response.json()) as { contents?: string | null }
-  if (!payload?.contents) {
-    throw new Error('AllOrigins 프록시 응답 데이터가 없습니다.')
-  }
-
-  const parsed = JSON.parse(payload.contents) as YahooQuoteResponse
-  return mapYahooQuoteEntries(parsed?.quoteResponse?.result)
-}
-
 const fetchYahooProxyQuotes = async (): Promise<Record<string, PriceInfo>> => {
-  try {
-    return await fetchYahooProxyQuotesFromLocal()
-  } catch (error) {
-    console.warn('로컬 Yahoo Finance 프록시 사용에 실패했습니다. AllOrigins를 시도합니다.', error)
-  }
-
-  try {
-    return await fetchYahooQuotesThroughAllOrigins()
-  } catch (error) {
-    console.error('AllOrigins 프록시 Yahoo Finance 로딩 실패', error)
-  }
-
-  return {}
+  return await fetchYahooProxyQuotesFromLocal()
 }
 
 export type { PriceInfo }
