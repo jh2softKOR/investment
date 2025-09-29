@@ -56,6 +56,13 @@ type YahooProxyQuoteEntry = {
   changePct?: number | string | null
 }
 
+type NaverWorkerQuoteEntry = {
+  symbol?: string
+  price?: number | string | null
+  change?: number | string | null
+  changePct?: number | string | null
+}
+
 type UnknownRecord = Record<string, unknown>
 
 type InvestingQuoteResponse = {
@@ -950,6 +957,45 @@ const mapYahooQuoteEntries = (
   return mapped
 }
 
+const mapNaverWorkerEntries = (entries: unknown): Record<string, PriceInfo> => {
+  if (!Array.isArray(entries)) {
+    return {}
+  }
+
+  const mapped: Record<string, PriceInfo> = {}
+
+  entries.forEach((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return
+    }
+
+    const { symbol } = entry as NaverWorkerQuoteEntry
+    if (!symbol) {
+      return
+    }
+
+    const price = parseNumericValue((entry as NaverWorkerQuoteEntry).price)
+    let changePercent = parseNumericValue((entry as NaverWorkerQuoteEntry).changePct)
+
+    if (changePercent === null) {
+      const change = parseNumericValue((entry as NaverWorkerQuoteEntry).change)
+      if (change !== null && price !== null) {
+        const previous = price - change
+        if (previous !== 0) {
+          changePercent = (change / previous) * 100
+        }
+      }
+    }
+
+    mapped[symbol] = {
+      price,
+      changePercent,
+    }
+  })
+
+  return mapped
+}
+
 const fetchYahooQuotes = async (symbols: string[]): Promise<Record<string, PriceInfo>> => {
   if (!symbols.length) {
     return {}
@@ -1007,6 +1053,32 @@ const fetchYahooProxyQuotesFromLocal = async (): Promise<Record<string, PriceInf
   return mapped
 }
 
+const fetchNaverWorkerQuotes = async (
+  endpoint: string | null | undefined
+): Promise<Record<string, PriceInfo>> => {
+  const trimmed = endpoint?.trim()
+  if (!trimmed) {
+    return {}
+  }
+
+  const response = await fetch(trimmed, {
+    cache: 'no-store',
+    credentials: 'omit',
+  })
+
+  if (!response.ok) {
+    throw new Error(`네이버 워커 응답 오류 (status: ${response.status})`)
+  }
+
+  const payload = (await response.json()) as unknown
+
+  if (payload && typeof payload === 'object' && 'error' in (payload as Record<string, unknown>)) {
+    throw new Error(`네이버 워커 오류: ${String((payload as Record<string, unknown>).error)}`)
+  }
+
+  return mapNaverWorkerEntries(payload)
+}
+
 const fetchYahooProxyQuotes = async (): Promise<Record<string, PriceInfo>> => {
   return await fetchYahooProxyQuotesFromLocal()
 }
@@ -1016,6 +1088,7 @@ export {
   fetchBinanceQuotes,
   fetchGoldSpotFromMetalsLive,
   fetchFmpQuotes,
+  fetchNaverWorkerQuotes,
   fetchYahooProxyQuotes,
   fetchGateIoQuotes,
   fetchInvestingQuotes,

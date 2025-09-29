@@ -6,6 +6,7 @@ import {
   fetchUsdKrwFromExchangeRateHost,
   fetchWtiFromStooqCsv,
   fetchYahooProxyQuotes,
+  fetchNaverWorkerQuotes,
   parseNumericValue,
 } from '../utils/marketData'
 import {
@@ -22,6 +23,10 @@ const wtiSymbol = 'CL=F' as const
 const goldSymbol = 'GC=F' as const
 const silverSymbol = 'SI=F' as const
 const rateSymbol = 'USDKRW=X' as const
+const naverRateSymbol = 'USDKRW' as const
+const naverGoldSymbol = 'GOLD' as const
+const naverSilverSymbol = 'SILVER' as const
+const naverOilSymbol = 'OIL' as const
 const customTickerEndpoint = (import.meta.env.VITE_CUSTOM_TICKER_URL ?? '/data/custom-ticker.json')
   .trim()
 
@@ -167,6 +172,7 @@ const ExchangeRateTicker = () => {
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null)
 
   const fmpApiKey = import.meta.env.VITE_FMP_KEY?.trim()
+  const naverWorkerUrl = import.meta.env.VITE_NAVER_WORKER_URL?.trim()
   const useLiveTickerData = shouldUseLiveTickerData()
 
   useEffect(() => {
@@ -212,11 +218,13 @@ const ExchangeRateTicker = () => {
       setStatus: Dispatch<SetStateAction<'idle' | 'loading' | 'error'>>
       setFallback: Dispatch<SetStateAction<boolean>>
       fetchers: Array<{ name: string; loader: () => Promise<PriceInfo | null> }>
+      naverSymbol?: string
     }
 
     const resolveRate = async (
       showLoading: boolean,
-      proxyQuotes: Record<string, PriceInfo> | null
+      proxyQuotes: Record<string, PriceInfo> | null,
+      naverQuotes: Record<string, PriceInfo> | null
     ) => {
       if (!active) {
         return
@@ -227,6 +235,10 @@ const ExchangeRateTicker = () => {
       }
 
       const rateFetchers: Array<{ name: string; loader: () => Promise<PriceInfo | null> }> = [
+        {
+          name: '네이버 워커',
+          loader: async () => naverQuotes?.[naverRateSymbol] ?? null,
+        },
         {
           name: 'Yahoo Finance 프록시',
           loader: async () => proxyQuotes?.[rateSymbol] ?? null,
@@ -268,7 +280,8 @@ const ExchangeRateTicker = () => {
     const resolveCommodity = async (
       showLoading: boolean,
       config: CommodityConfig,
-      proxyQuotes: Record<string, PriceInfo> | null
+      proxyQuotes: Record<string, PriceInfo> | null,
+      naverQuotes: Record<string, PriceInfo> | null
     ) => {
       if (!active) {
         return
@@ -306,8 +319,17 @@ const ExchangeRateTicker = () => {
           name: 'Yahoo Finance 프록시',
           loader: async () => proxyQuotes?.[config.symbol] ?? null,
         },
-        ...config.fetchers,
       ]
+
+      if (config.naverSymbol) {
+        const naverSymbol = config.naverSymbol
+        fetchers.unshift({
+          name: '네이버 워커',
+          loader: async () => naverQuotes?.[naverSymbol] ?? null,
+        })
+      }
+
+      fetchers.push(...config.fetchers)
 
       for (const fetcher of fetchers) {
         let result: PriceInfo | null = null
@@ -350,7 +372,8 @@ const ExchangeRateTicker = () => {
 
     const resolveOil = (
       showLoading: boolean,
-      proxyQuotes: Record<string, PriceInfo> | null
+      proxyQuotes: Record<string, PriceInfo> | null,
+      naverQuotes: Record<string, PriceInfo> | null
     ) =>
       resolveCommodity(showLoading, {
         symbol: wtiSymbol,
@@ -359,6 +382,7 @@ const ExchangeRateTicker = () => {
         setInfo: setOil,
         setStatus: setOilStatus,
         setFallback: setOilFallback,
+        naverSymbol: naverOilSymbol,
         fetchers: [
           {
             name: '사용자 지정 데이터',
@@ -376,11 +400,12 @@ const ExchangeRateTicker = () => {
             },
           },
         ],
-      }, proxyQuotes)
+      }, proxyQuotes, naverQuotes)
 
     const resolveGold = (
       showLoading: boolean,
-      proxyQuotes: Record<string, PriceInfo> | null
+      proxyQuotes: Record<string, PriceInfo> | null,
+      naverQuotes: Record<string, PriceInfo> | null
     ) =>
       resolveCommodity(showLoading, {
         symbol: goldSymbol,
@@ -389,6 +414,7 @@ const ExchangeRateTicker = () => {
         setInfo: setGold,
         setStatus: setGoldStatus,
         setFallback: setGoldFallback,
+        naverSymbol: naverGoldSymbol,
         fetchers: [
           {
             name: '사용자 지정 데이터',
@@ -406,11 +432,12 @@ const ExchangeRateTicker = () => {
             },
           },
         ],
-      }, proxyQuotes)
+      }, proxyQuotes, naverQuotes)
 
     const resolveSilver = (
       showLoading: boolean,
-      proxyQuotes: Record<string, PriceInfo> | null
+      proxyQuotes: Record<string, PriceInfo> | null,
+      naverQuotes: Record<string, PriceInfo> | null
     ) =>
       resolveCommodity(showLoading, {
         symbol: silverSymbol,
@@ -419,6 +446,7 @@ const ExchangeRateTicker = () => {
         setInfo: setSilver,
         setStatus: setSilverStatus,
         setFallback: setSilverFallback,
+        naverSymbol: naverSilverSymbol,
         fetchers: [
           {
             name: '사용자 지정 데이터',
@@ -436,10 +464,11 @@ const ExchangeRateTicker = () => {
             },
           },
         ],
-      }, proxyQuotes)
+      }, proxyQuotes, naverQuotes)
 
     const loadAll = async (showLoading: boolean) => {
       let proxyQuotes: Record<string, PriceInfo> | null = null
+      let naverQuotes: Record<string, PriceInfo> | null = null
 
       try {
         proxyQuotes = await fetchYahooProxyQuotes()
@@ -447,11 +476,18 @@ const ExchangeRateTicker = () => {
         console.error('Yahoo Finance 프록시 시세 로딩 실패', error)
       }
 
+      try {
+        const quotes = await fetchNaverWorkerQuotes(naverWorkerUrl)
+        naverQuotes = quotes
+      } catch (error) {
+        console.error('네이버 워커 시세 로딩 실패', error)
+      }
+
       await Promise.all([
-        resolveRate(showLoading, proxyQuotes),
-        resolveOil(showLoading, proxyQuotes),
-        resolveGold(showLoading, proxyQuotes),
-        resolveSilver(showLoading, proxyQuotes),
+        resolveRate(showLoading, proxyQuotes, naverQuotes),
+        resolveOil(showLoading, proxyQuotes, naverQuotes),
+        resolveGold(showLoading, proxyQuotes, naverQuotes),
+        resolveSilver(showLoading, proxyQuotes, naverQuotes),
       ])
     }
 
@@ -464,7 +500,7 @@ const ExchangeRateTicker = () => {
       active = false
       window.clearInterval(interval)
     }
-  }, [fmpApiKey, useLiveTickerData])
+  }, [fmpApiKey, naverWorkerUrl, useLiveTickerData])
 
   useEffect(() => {
     if (rateFallback || oilFallback || goldFallback || silverFallback) {
