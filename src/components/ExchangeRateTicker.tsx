@@ -21,6 +21,7 @@ import { shouldUseLiveTickerData } from '../utils/liveDataFlags'
 const wtiSymbol = 'CL=F' as const
 const goldSymbol = 'GC=F' as const
 const silverSymbol = 'SI=F' as const
+const rateSymbol = 'USDKRW=X' as const
 const customTickerEndpoint = (import.meta.env.VITE_CUSTOM_TICKER_URL ?? '/data/custom-ticker.json')
   .trim()
 
